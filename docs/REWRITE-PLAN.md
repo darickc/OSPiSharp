@@ -54,7 +54,29 @@ matching the old firmware's scheduling behavior provably.
   round-trip of a program across schedule types, zone/master/settings edits all persist; no
   console errors. **Deferred to later phases as planned:** drag-and-drop run-order reordering
   and multi-select bulk duration edit (Phase 4).
-- **Phases 2–6:** not started. Next: **Phase 2 — Scheduler core** (highest risk).
+- **Phase 2 — Scheduler core (pure core: 🟡 in progress).**
+  Pure functions landed (2026-06-04) in a new `OSPi.Domain/Scheduling/` namespace, with **no**
+  clock/EF/GPIO/UTC dependency (Domain has zero external refs): `CivilInstant` (site-local civil
+  time mirroring the firmware's `now_tz()`+`gmtime` — **fixed offset, no DST**, to match the
+  oracle); `ProgramMatcher.CheckDayMatch`/`CheckMatch`/`ResolveStartMinute` porting
+  `program.cpp` `check_day_match`/`check_match`/`starttime_decode` (weekly/single/monthly-last-day/
+  interval/odd-even, date-range year-wrap, fixed vs repeating starts, interval `c<=repeat`, the
+  overnight `t-86400` branch, sunrise/sunset clamp asymmetry); `StationScheduler.Plan` +
+  `MasterShouldBeOn` porting `schedule_all_stations`/`handle_master_adjustments` (sequential
+  groups staggered 1s, station delay, parallel concurrency, `last_seq_stop_times` carryover,
+  insert-front preempt/trim, master lead/lag with the firmware's 0→±1 coercion). Test gate
+  (hybrid, hand-authored, each case citing its C++ line): 50 new xUnit cases across
+  `ProgramMatcherTests`/`StationSchedulerTests`; **`dotnet test` green (63 total)**. Documented
+  faithful divergences: we do not replicate the firmware's `unsigned char` max-start-time
+  truncation bug nor its out-of-bounds `seq_start_times[255]` write for master-bound parallel
+  zones; `ZoneGroup.Independent` is treated as concurrent. The optional differential harness
+  against the C++ DEMO build (planner-only, CI-optional) is **not yet built** — the hand-authored
+  gate is the primary exit criterion.
+  **Remaining (2e–2g):** engine `Tick()` restructure + runtime queue, new `EngineCommand`s
+  (RunProgram/RunZoneTimed/SetRainDelay/Pause/Resume/ReloadConfig), in-loop water-level scaling
+  (`<20%`/`<10s` skip), `SecondsRemaining`, rain-delay/disabled/sensor gating, single-run deletion
+  plumbing, config reload, `ISolarCalculator`, and the full-day integration sim.
+- **Phases 3–6:** not started.
 
 ## Reference files to port (from the OpenSprinkler-Firmware C++ repo; read, do not modify)
 
