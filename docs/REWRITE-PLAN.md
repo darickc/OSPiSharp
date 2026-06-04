@@ -54,7 +54,7 @@ matching the old firmware's scheduling behavior provably.
   round-trip of a program across schedule types, zone/master/settings edits all persist; no
   console errors. **Deferred to later phases as planned:** drag-and-drop run-order reordering
   and multi-select bulk duration edit (Phase 4).
-- **Phase 2 — Scheduler core (pure core: 🟡 in progress).**
+- **Phase 2 — Scheduler core: ✅ complete.**
   Pure functions landed (2026-06-04) in a new `OSPi.Domain/Scheduling/` namespace, with **no**
   clock/EF/GPIO/UTC dependency (Domain has zero external refs): `CivilInstant` (site-local civil
   time mirroring the firmware's `now_tz()`+`gmtime` — **fixed offset, no DST**, to match the
@@ -72,10 +72,31 @@ matching the old firmware's scheduling behavior provably.
   zones; `ZoneGroup.Independent` is treated as concurrent. The optional differential harness
   against the C++ DEMO build (planner-only, CI-optional) is **not yet built** — the hand-authored
   gate is the primary exit criterion.
-  **Remaining (2e–2g):** engine `Tick()` restructure + runtime queue, new `EngineCommand`s
-  (RunProgram/RunZoneTimed/SetRainDelay/Pause/Resume/ReloadConfig), in-loop water-level scaling
-  (`<20%`/`<10s` skip), `SecondsRemaining`, rain-delay/disabled/sensor gating, single-run deletion
-  plumbing, config reload, `ISolarCalculator`, and the full-day integration sim.
+  Engine runtime landed (2026-06-04, two chunks). **Chunk A** restructured
+  `SprinklerEngine.Tick()` into the firmware's `do_loop` shape: a UTC-epoch minute-roll gate
+  drives per-minute `ProgramMatcher.CheckMatch` (accumulating `PendingZone`s across all matched
+  programs, then one `StationScheduler.Plan` call), and a per-second pass assigns the
+  earliest-start queue item to each hardware bit, time-keeps on/off, drives masters via
+  `MasterShouldBeOn`, and dequeues. The engine owns an absolute-epoch runtime queue
+  (`LiveQueueItem`) converted to/from the planner's relative offsets at planning base = now;
+  added `EngineCommand`s RunProgram/RunZoneTimed/SetRainDelay/Pause/Resume/ReloadConfig;
+  in-loop water-level scaling with the `<20%`/`<10s` skip; `SecondsRemaining`/`ProgramId`/`Queued`
+  status; rain-delay (per-zone `IgnoreRain`)/pause/disabled gating; single-run deletion via an
+  off-thread fire-and-forget + `_deletedThisSession` guard; config cached as an immutable
+  `SchedulingData` snapshot refreshed off-thread on `ReloadConfig` (the singleton engine resolves
+  scoped repos through `IServiceScopeFactory`). New `ControllerSettings.UtcOffsetMinutes`
+  (fixed offset, no DST) with EF migration `AddUtcOffsetToControllerSettings` + settings-page
+  field feeds `CivilInstant`. **Sensors are deliberately not ported** (no hardware);
+  `Zone.IgnoreSensor` stays dormant. **Chunk B** added a pure NOAA `SolarCalculator`
+  (`OSPi.Domain/Scheduling/`) behind `ISolarCalculator`/`SolarCalculatorService` (null-location →
+  06:00/18:00 defaults, polar day/night policy), expanded `StatusSnapshot`, and the full-day
+  integration sim. Verified: `dotnet build`/`dotnet test` green (**82 tests**, +19 this phase) —
+  9 hand-authored engine scenarios (sequential+delay, parallel, master lead/lag, rain gating,
+  single-run delete, water-level skip, manual insert-front preempt, pause), 7 solar fixtures, and
+  3 golden-transition-log day sims (full 24h two-program replay, overnight midnight crossing,
+  sequential+master with 0→±1 coercion). Browser smoke (Sim driver): app boots, UTC-offset field
+  round-trips to DB, manual zone toggle + Stop-all drive through the restructured engine, no
+  console errors.
 - **Phases 3–6:** not started.
 
 ## Reference files to port (from the OpenSprinkler-Firmware C++ repo; read, do not modify)

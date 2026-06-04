@@ -36,6 +36,9 @@ public static class DependencyInjection
 
         services.AddSingleton<IStateHub, InMemoryStateHub>();
 
+        // Pure sunrise/sunset math — stateless, safe as a singleton.
+        services.AddSingleton<ISolarCalculator, SolarCalculatorService>();
+
         // One engine instance shared by the hosted service and the services that post to it.
         services.AddSingleton<SprinklerEngine>();
         services.AddHostedService(sp => sp.GetRequiredService<SprinklerEngine>());

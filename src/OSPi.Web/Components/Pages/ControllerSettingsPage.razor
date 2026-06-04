@@ -32,6 +32,13 @@ else
                 <div class="form-text">Delay inserted between sequential stations.</div>
             </div>
 
+            <div class="col-md-6">
+                <label class="form-label">UTC offset (minutes)</label>
+                <InputNumber class="form-control" @bind-Value="_model.UtcOffsetMinutes" />
+                <ValidationMessage For="() => _model.UtcOffsetMinutes" />
+                <div class="form-text">Fixed site offset from UTC, no DST (e.g. -420 = Mountain Standard). Drives schedule timing and sunrise/sunset.</div>
+            </div>
+
             <div class="col-12">
                 <div class="form-check">
                     <InputCheckbox class="form-check-input" id="useWeather" @bind-Value="_model.UseWeather" />
@@ -122,6 +129,9 @@ else
         [Range(0, 86_400, ErrorMessage = "Station delay must be between 0 and 86400 seconds.")]
         public int StationDelaySeconds { get; set; }
 
+        [Range(-840, 840, ErrorMessage = "UTC offset must be between -840 and 840 minutes.")]
+        public int UtcOffsetMinutes { get; set; }
+
         public bool UseWeather { get; set; } = true;
 
         public bool SequentialDefault { get; set; } = true;
@@ -140,6 +150,7 @@ else
         {
             WaterLevelPercent = s.WaterLevelPercent,
             StationDelaySeconds = s.StationDelaySeconds,
+            UtcOffsetMinutes = s.UtcOffsetMinutes,
             UseWeather = s.UseWeather,
             SequentialDefault = s.SequentialDefault,
             RainDelayActive = s.RainDelayUntil is not null,
@@ -161,6 +172,7 @@ else
                 Id = 1,
                 WaterLevelPercent = WaterLevelPercent,
                 StationDelaySeconds = StationDelaySeconds,
+                UtcOffsetMinutes = UtcOffsetMinutes,
                 UseWeather = UseWeather,
                 SequentialDefault = SequentialDefault,
                 RainDelayUntil = rainDelay,

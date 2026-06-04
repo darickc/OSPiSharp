@@ -1,29 +1,30 @@
 using System.Diagnostics;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using OSPi.Application.Engine;
-using OSPi.Application.Hardware;
+using OSPi.Application.Persistence;
+using OSPi.Application.Services;
 
 namespace OSPi.Tests.Engine;
 
 public class SprinklerEngineTests
 {
-    /// <summary>Captures the last bit array applied, standing in for hardware.</summary>
-    private sealed class CapturingDriver : IZoneDriver
-    {
-        public CapturingDriver(int zoneCount) => ZoneCount = zoneCount;
-        public int ZoneCount { get; }
-        public bool[] Last { get; private set; } = Array.Empty<bool>();
-        public void Apply(ReadOnlySpan<bool> zoneStates) => Last = zoneStates.ToArray();
-    }
-
     private static async Task<(SprinklerEngine engine, CapturingDriver driver, InMemoryStateHub hub, FakeTimeProvider time)> StartEngineAsync(int zones = 16)
     {
         var driver = new CapturingDriver(zones);
         var hub = new InMemoryStateHub();
         var time = new FakeTimeProvider();
-        var engine = new SprinklerEngine(driver, hub, NullLogger<SprinklerEngine>.Instance, time);
+        var data = Build.Data(Build.Settings(), Build.Zones16());
+        var scopeFactory = new FakeScopeFactory(new Dictionary<Type, object>
+        {
+            [typeof(ISchedulingDataRepository)] = new FakeSchedulingDataRepository(data),
+            [typeof(IProgramRepository)] = new RecordingProgramRepository(),
+            [typeof(IControllerSettingsRepository)] = new FakeControllerSettingsRepository(),
+        });
+        var engine = new SprinklerEngine(driver, hub, NullLogger<SprinklerEngine>.Instance,
+            scopeFactory, new FixedSolarCalculator(), time);
 
         await engine.StartAsync(CancellationToken.None);
         // The host starts ExecuteAsync on a background thread, so wait for the engine's

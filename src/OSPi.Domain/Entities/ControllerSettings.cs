@@ -15,6 +15,14 @@ public sealed class ControllerSettings
     /// <summary>Delay inserted between sequential stations, in seconds.</summary>
     public int StationDelaySeconds { get; set; }
 
+    /// <summary>
+    /// Fixed minutes to add to UTC to obtain site civil time. <strong>No DST</strong> — this
+    /// mirrors the firmware's <c>now_tz()</c> fixed-offset model, so the scheduler's
+    /// <see cref="ControllerSettings"/>-derived civil time never shifts. Example:
+    /// US Mountain Standard Time = <c>-420</c>.
+    /// </summary>
+    public int UtcOffsetMinutes { get; set; }
+
     /// <summary>Master switch for weather-based adjustment.</summary>
     public bool UseWeather { get; set; } = true;
 
