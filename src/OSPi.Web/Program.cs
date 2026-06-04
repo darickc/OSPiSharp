@@ -1,4 +1,5 @@
 using OSPi.Infrastructure;
+using OSPi.Infrastructure.Persistence;
 using OSPi.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -11,6 +12,9 @@ builder.Services.AddRazorComponents()
 builder.Services.AddSprinklerCore(builder.Configuration);
 
 var app = builder.Build();
+
+// Create/upgrade the SQLite database (applies migrations and seed data on first run).
+await app.Services.MigrateDatabaseAsync();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

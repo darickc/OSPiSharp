@@ -27,6 +27,25 @@ carefully, and build everything else fresh.
 five requested features, with a real-time UI and an AI-controllable MCP surface, while
 matching the old firmware's scheduling behavior provably.
 
+## Progress
+
+- **Phase 0 — Walking skeleton: ✅ complete.** 5-project clean-architecture solution;
+  `IZoneDriver` with `Sim` + `ShiftRegister` drivers; `SprinklerEngine : BackgroundService`
+  driven by a `Channel<EngineCommand>`; `IStateHub`/`StatusSnapshot`; Blazor page with 16
+  working zone toggles; engine unit tests green.
+- **Phase 1 — Persistence + CRUD: 🔄 in progress (data layer complete, CRUD UI pending).**
+  Landed 2026-06-04: Domain entities + enums (`Zone`, `Program`, owned `ProgramStartTime`,
+  `ProgramZoneDuration` with first-class `RunOrder`, `MasterStation`, `ControllerSettings`,
+  `RunLogEntry`); EF Core 10 / SQLite `OSPiDbContext` with Fluent configs, enum→int
+  conversions, owned start-times, unique indexes, and cascade/set-null FK behavior;
+  `InitialCreate` migration seeding 16 zones + 2 masters + settings; repository interfaces
+  (Application) over `IDbContextFactory` (Infrastructure), incl. a one-call `SchedulingData`
+  read for Phase 2; startup `MigrateAsync`; 9 SQLite in-memory persistence tests. Verified:
+  app creates the DB under app-data on first run; `dotnet build`/`dotnet test` green;
+  dependency rule holds (Domain has no packages, Application has no EF reference).
+  **Remaining:** Blazor CRUD screens for zones, programs, masters, and settings.
+- **Phases 2–6:** not started.
+
 ## Reference files to port (from the OpenSprinkler-Firmware C++ repo; read, do not modify)
 
 - `program.cpp` — `check_match`, `starttime_decode`, `gen_station_runorder`

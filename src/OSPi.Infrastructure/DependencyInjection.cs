@@ -6,17 +6,21 @@ using OSPi.Application.Engine;
 using OSPi.Application.Hardware;
 using OSPi.Application.Services;
 using OSPi.Infrastructure.Hardware;
+using OSPi.Infrastructure.Persistence;
 
 namespace OSPi.Infrastructure;
 
 public static class DependencyInjection
 {
     /// <summary>
-    /// Registers the hardware driver (selected by config), the state hub, the sprinkler
-    /// engine (as both a singleton and a hosted service), and the application services.
+    /// Registers persistence (SQLite context factory + repositories), the hardware driver
+    /// (selected by config), the state hub, the sprinkler engine (as both a singleton and a
+    /// hosted service), and the application services.
     /// </summary>
     public static IServiceCollection AddSprinklerCore(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddPersistence(configuration);
+
         services.Configure<HardwareOptions>(configuration.GetSection(HardwareOptions.SectionName));
 
         services.AddSingleton<IZoneDriver>(sp =>
