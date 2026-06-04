@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ospi-web",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/OSPi.Web", "--launch-profile", "http", "--no-build"],
+      "port": 5117
+    }
+  ]
+}

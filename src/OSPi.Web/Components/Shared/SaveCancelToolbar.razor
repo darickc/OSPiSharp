@@ -1,0 +1,33 @@
+@*
+    Save / Cancel button bar shared by every edit form. The Save button shows a
+    spinner and disables both buttons while Busy is true.
+*@
+
+<div class="d-flex gap-2 mt-4">
+    <button type="submit" class="btn btn-primary" disabled="@Busy">
+        @if (Busy)
+        {
+            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+        }
+        @SaveText
+    </button>
+    <button type="button" class="btn btn-outline-secondary" disabled="@Busy" @onclick="OnCancel">
+        @CancelText
+    </button>
+    @ChildContent
+</div>
+
+@code {
+    /// <summary>When true, both buttons are disabled and the Save button shows a spinner.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>Invoked when the Cancel button is clicked.</summary>
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    [Parameter] public string SaveText { get; set; } = "Save";
+
+    [Parameter] public string CancelText { get; set; } = "Cancel";
+
+    /// <summary>Optional extra controls rendered to the right of Cancel.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

@@ -33,18 +33,28 @@ matching the old firmware's scheduling behavior provably.
   `IZoneDriver` with `Sim` + `ShiftRegister` drivers; `SprinklerEngine : BackgroundService`
   driven by a `Channel<EngineCommand>`; `IStateHub`/`StatusSnapshot`; Blazor page with 16
   working zone toggles; engine unit tests green.
-- **Phase 1 — Persistence + CRUD: 🔄 in progress (data layer complete, CRUD UI pending).**
-  Landed 2026-06-04: Domain entities + enums (`Zone`, `Program`, owned `ProgramStartTime`,
-  `ProgramZoneDuration` with first-class `RunOrder`, `MasterStation`, `ControllerSettings`,
-  `RunLogEntry`); EF Core 10 / SQLite `OSPiDbContext` with Fluent configs, enum→int
-  conversions, owned start-times, unique indexes, and cascade/set-null FK behavior;
+- **Phase 1 — Persistence + CRUD: ✅ complete.**
+  Data layer (landed 2026-06-04): Domain entities + enums (`Zone`, `Program`, owned
+  `ProgramStartTime`, `ProgramZoneDuration` with first-class `RunOrder`, `MasterStation`,
+  `ControllerSettings`, `RunLogEntry`); EF Core 10 / SQLite `OSPiDbContext` with Fluent configs,
+  enum→int conversions, owned start-times, unique indexes, and cascade/set-null FK behavior;
   `InitialCreate` migration seeding 16 zones + 2 masters + settings; repository interfaces
   (Application) over `IDbContextFactory` (Infrastructure), incl. a one-call `SchedulingData`
-  read for Phase 2; startup `MigrateAsync`; 9 SQLite in-memory persistence tests. Verified:
-  app creates the DB under app-data on first run; `dotnet build`/`dotnet test` green;
-  dependency rule holds (Domain has no packages, Application has no EF reference).
-  **Remaining:** Blazor CRUD screens for zones, programs, masters, and settings.
-- **Phases 2–6:** not started.
+  read for Phase 2; startup `MigrateAsync`; 9 SQLite in-memory persistence tests.
+  CRUD UI (landed 2026-06-04): config screens under a `/config/*` prefix (dashboard stays at
+  `/zones`) — settings, zones (edit-only, 16 seeded), master stations (2 seeded), programs list
+  + full Program editor covering all four schedule types, fixed/repeating start times,
+  sunrise/sunset offsets, the date-range gate, and per-zone durations + `RunOrder`. Validation
+  via `EditForm` + `DataAnnotationsValidator` on Web-layer view models (Domain POCOs stay
+  annotation-free); shared components `EnumSelect`/`DurationInput`/`TimeOfDayInput`/
+  `WeekdayPicker`/`SaveCancelToolbar`/`ConfirmDeleteModal`. The Program editor offers only
+  not-yet-added zones and leaves duration `Id = 0` so `ProgramRepository.UpdateAsync`'s
+  merge-by-`ZoneId` does not duplicate or drop rows. Verified: `dotnet build`/`dotnet test`
+  green (13 tests); every screen exercised in the browser with the Sim driver — create/edit/
+  round-trip of a program across schedule types, zone/master/settings edits all persist; no
+  console errors. **Deferred to later phases as planned:** drag-and-drop run-order reordering
+  and multi-select bulk duration edit (Phase 4).
+- **Phases 2–6:** not started. Next: **Phase 2 — Scheduler core** (highest risk).
 
 ## Reference files to port (from the OpenSprinkler-Firmware C++ repo; read, do not modify)
 

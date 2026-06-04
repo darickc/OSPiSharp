@@ -1,0 +1,72 @@
+@*
+    Two-way bound duration input. Edits a duration in seconds but displays/accepts
+    "mm:ss" (also accepts a plain integer count of seconds). Invalid input is ignored,
+    keeping the last good value.
+*@
+
+<input class="form-control @CssClass"
+       style="@Style"
+       value="@Format(Value)"
+       placeholder="mm:ss"
+       @onchange="OnChanged" />
+
+@code {
+    [Parameter] public int Value { get; set; }
+
+    [Parameter] public EventCallback<int> ValueChanged { get; set; }
+
+    [Parameter] public string? CssClass { get; set; }
+
+    [Parameter] public string? Style { get; set; }
+
+    private static string Format(int seconds)
+    {
+        if (seconds < 0)
+        {
+            seconds = 0;
+        }
+
+        return $"{seconds / 60}:{seconds % 60:D2}";
+    }
+
+    private async Task OnChanged(ChangeEventArgs e)
+    {
+        var parsed = Parse(e.Value?.ToString());
+        if (parsed is { } seconds && seconds != Value)
+        {
+            Value = seconds;
+            await ValueChanged.InvokeAsync(seconds);
+        }
+        else
+        {
+            // Re-render to snap the text back to the last good value.
+            await ValueChanged.InvokeAsync(Value);
+        }
+    }
+
+    /// <summary>Parses "mm:ss", "m:ss", or a bare seconds integer. Returns null when invalid.</summary>
+    public static int? Parse(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        text = text.Trim();
+        var colon = text.IndexOf(':');
+        if (colon < 0)
+        {
+            return int.TryParse(text, out var secs) && secs >= 0 ? secs : null;
+        }
+
+        var minutePart = text[..colon];
+        var secondPart = text[(colon + 1)..];
+        if (int.TryParse(minutePart, out var minutes) && minutes >= 0 &&
+            int.TryParse(secondPart, out var seconds) && seconds is >= 0 and < 60)
+        {
+            return (minutes * 60) + seconds;
+        }
+
+        return null;
+    }
+}

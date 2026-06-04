@@ -1,0 +1,38 @@
+@*
+    Seven checkboxes bound to a weekday bitmask byte: bit 0 = Monday .. bit 6 = Sunday.
+*@
+
+<div class="d-flex flex-wrap gap-3">
+    @for (var i = 0; i < Days.Length; i++)
+    {
+        var bit = i;
+        <div class="form-check">
+            <input type="checkbox"
+                   class="form-check-input"
+                   id="@($"weekday-{bit}")"
+                   checked="@IsSet(bit)"
+                   @onchange="e => Toggle(bit, (bool)(e.Value ?? false))" />
+            <label class="form-check-label" for="@($"weekday-{bit}")">@Days[bit]</label>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly string[] Days = { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+
+    [Parameter] public byte Value { get; set; }
+
+    [Parameter] public EventCallback<byte> ValueChanged { get; set; }
+
+    private bool IsSet(int bit) => (Value & (1 << bit)) != 0;
+
+    private async Task Toggle(int bit, bool on)
+    {
+        var updated = on
+            ? (byte)(Value | (1 << bit))
+            : (byte)(Value & ~(1 << bit));
+
+        Value = updated;
+        await ValueChanged.InvokeAsync(updated);
+    }
+}

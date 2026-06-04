@@ -1,0 +1,172 @@
+@page "/config/settings"
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@inject IControllerSettingsRepository SettingsRepo
+
+<PageTitle>Settings</PageTitle>
+
+<h1>Controller Settings</h1>
+<p class="text-muted">Global, runtime-editable options. Hardware pin configuration lives in appsettings, not here.</p>
+
+@if (_model is null)
+{
+    <p><em>Loading…</em></p>
+}
+else
+{
+    <EditForm Model="_model" OnValidSubmit="SaveAsync">
+        <DataAnnotationsValidator />
+
+        <div class="row g-3" style="max-width: 720px;">
+            <div class="col-md-6">
+                <label class="form-label">Water level (%)</label>
+                <InputNumber class="form-control" @bind-Value="_model.WaterLevelPercent" />
+                <ValidationMessage For="() => _model.WaterLevelPercent" />
+                <div class="form-text">Global scaling applied to every program duration.</div>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Station delay (seconds)</label>
+                <InputNumber class="form-control" @bind-Value="_model.StationDelaySeconds" />
+                <ValidationMessage For="() => _model.StationDelaySeconds" />
+                <div class="form-text">Delay inserted between sequential stations.</div>
+            </div>
+
+            <div class="col-12">
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" id="useWeather" @bind-Value="_model.UseWeather" />
+                    <label class="form-check-label" for="useWeather">Use weather-based adjustment</label>
+                </div>
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" id="sequentialDefault" @bind-Value="_model.SequentialDefault" />
+                    <label class="form-check-label" for="sequentialDefault">Sequential by default for new zones</label>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" id="rainDelay" @bind-Value="_model.RainDelayActive" />
+                    <label class="form-check-label" for="rainDelay">Rain delay active</label>
+                </div>
+                @if (_model.RainDelayActive)
+                {
+                    <div class="mt-2" style="max-width: 320px;">
+                        <label class="form-label">Suppress scheduling until</label>
+                        <InputDate Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="_model.RainDelayUntilLocal" />
+                        <ValidationMessage For="() => _model.RainDelayUntilLocal" />
+                    </div>
+                }
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Latitude</label>
+                <InputNumber class="form-control" @bind-Value="_model.LocationLatitude" />
+                <ValidationMessage For="() => _model.LocationLatitude" />
+                <div class="form-text">For sunrise/sunset start times (Phase 2). Leave blank if unset.</div>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Longitude</label>
+                <InputNumber class="form-control" @bind-Value="_model.LocationLongitude" />
+                <ValidationMessage For="() => _model.LocationLongitude" />
+            </div>
+        </div>
+
+        <SaveCancelToolbar Busy="_busy" OnCancel="ReloadAsync" CancelText="Reset" />
+    </EditForm>
+
+    @if (_saved)
+    {
+        <div class="alert alert-success mt-3 py-2" role="alert">Settings saved.</div>
+    }
+}
+
+@code {
+    private SettingsModel? _model;
+    private bool _busy;
+    private bool _saved;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        var settings = await SettingsRepo.GetAsync();
+        _model = SettingsModel.FromEntity(settings);
+        _saved = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_model is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await SettingsRepo.UpdateAsync(_model.ToEntity());
+            _saved = true;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private sealed class SettingsModel
+    {
+        [Range(0, 200, ErrorMessage = "Water level must be between 0 and 200%.")]
+        public int WaterLevelPercent { get; set; } = 100;
+
+        [Range(0, 86_400, ErrorMessage = "Station delay must be between 0 and 86400 seconds.")]
+        public int StationDelaySeconds { get; set; }
+
+        public bool UseWeather { get; set; } = true;
+
+        public bool SequentialDefault { get; set; } = true;
+
+        public bool RainDelayActive { get; set; }
+
+        public DateTime? RainDelayUntilLocal { get; set; }
+
+        [Range(-90, 90, ErrorMessage = "Latitude must be between -90 and 90.")]
+        public double? LocationLatitude { get; set; }
+
+        [Range(-180, 180, ErrorMessage = "Longitude must be between -180 and 180.")]
+        public double? LocationLongitude { get; set; }
+
+        public static SettingsModel FromEntity(ControllerSettings s) => new()
+        {
+            WaterLevelPercent = s.WaterLevelPercent,
+            StationDelaySeconds = s.StationDelaySeconds,
+            UseWeather = s.UseWeather,
+            SequentialDefault = s.SequentialDefault,
+            RainDelayActive = s.RainDelayUntil is not null,
+            RainDelayUntilLocal = s.RainDelayUntil?.LocalDateTime,
+            LocationLatitude = s.LocationLatitude,
+            LocationLongitude = s.LocationLongitude,
+        };
+
+        public ControllerSettings ToEntity()
+        {
+            DateTimeOffset? rainDelay = null;
+            if (RainDelayActive && RainDelayUntilLocal is { } local)
+            {
+                rainDelay = new DateTimeOffset(local, TimeZoneInfo.Local.GetUtcOffset(local));
+            }
+
+            return new ControllerSettings
+            {
+                Id = 1,
+                WaterLevelPercent = WaterLevelPercent,
+                StationDelaySeconds = StationDelaySeconds,
+                UseWeather = UseWeather,
+                SequentialDefault = SequentialDefault,
+                RainDelayUntil = rainDelay,
+                LocationLatitude = LocationLatitude,
+                LocationLongitude = LocationLongitude,
+            };
+        }
+    }
+}

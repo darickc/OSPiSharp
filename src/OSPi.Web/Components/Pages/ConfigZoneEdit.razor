@@ -1,0 +1,155 @@
+@page "/config/zones/{Id:int}"
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@inject IZoneRepository ZoneRepo
+@inject NavigationManager Nav
+
+<PageTitle>Edit Zone</PageTitle>
+
+@if (_notFound)
+{
+    <h1>Zone not found</h1>
+    <a class="btn btn-outline-secondary" href="config/zones">Back to zones</a>
+}
+else if (_model is null)
+{
+    <p><em>Loading…</em></p>
+}
+else
+{
+    <h1>Edit Zone</h1>
+
+    <EditForm Model="_model" OnValidSubmit="SaveAsync">
+        <DataAnnotationsValidator />
+
+        <div class="row g-3" style="max-width: 640px;">
+            <div class="col-md-4">
+                <label class="form-label">Hardware bit</label>
+                <input class="form-control" value="@_model.HardwareBit" disabled />
+                <div class="form-text">Fixed hardware index — not editable.</div>
+            </div>
+
+            <div class="col-md-8">
+                <label class="form-label">Name</label>
+                <InputText class="form-control" @bind-Value="_model.Name" />
+                <ValidationMessage For="() => _model.Name" />
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Group</label>
+                <EnumSelect TEnum="ZoneGroup" @bind-Value="_model.Group" LabelFor="DisplayLabels.ZoneGroup" />
+            </div>
+
+            <div class="col-12">
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" id="m1" @bind-Value="_model.BoundToMaster1" />
+                    <label class="form-check-label" for="m1">Activates master station 1</label>
+                </div>
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" id="m2" @bind-Value="_model.BoundToMaster2" />
+                    <label class="form-check-label" for="m2">Activates master station 2</label>
+                </div>
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" id="disabled" @bind-Value="_model.Disabled" />
+                    <label class="form-check-label" for="disabled">Disabled (never scheduled or run)</label>
+                </div>
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" id="ignoreRain" @bind-Value="_model.IgnoreRain" />
+                    <label class="form-check-label" for="ignoreRain">Ignore active rain delay</label>
+                </div>
+                <div class="form-check">
+                    <InputCheckbox class="form-check-input" id="ignoreSensor" @bind-Value="_model.IgnoreSensor" />
+                    <label class="form-check-label" for="ignoreSensor">Ignore sensor input</label>
+                </div>
+            </div>
+        </div>
+
+        <SaveCancelToolbar Busy="_busy" OnCancel="GoBack" />
+    </EditForm>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private ZoneModel? _model;
+    private bool _busy;
+    private bool _notFound;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var zone = await ZoneRepo.GetAsync(Id);
+        if (zone is null)
+        {
+            _notFound = true;
+            return;
+        }
+
+        _model = ZoneModel.FromEntity(zone);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_model is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await ZoneRepo.UpdateAsync(_model.ToEntity());
+            GoBack();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void GoBack() => Nav.NavigateTo("config/zones");
+
+    private sealed class ZoneModel
+    {
+        public int Id { get; set; }
+
+        public int HardwareBit { get; set; }
+
+        [Required(ErrorMessage = "Name is required.")]
+        [MaxLength(64, ErrorMessage = "Name must be 64 characters or fewer.")]
+        public string Name { get; set; } = string.Empty;
+
+        public ZoneGroup Group { get; set; }
+
+        public bool BoundToMaster1 { get; set; }
+        public bool BoundToMaster2 { get; set; }
+        public bool Disabled { get; set; }
+        public bool IgnoreRain { get; set; }
+        public bool IgnoreSensor { get; set; }
+
+        public static ZoneModel FromEntity(Zone z) => new()
+        {
+            Id = z.Id,
+            HardwareBit = z.HardwareBit,
+            Name = z.Name,
+            Group = z.Group,
+            BoundToMaster1 = z.BoundToMaster1,
+            BoundToMaster2 = z.BoundToMaster2,
+            Disabled = z.Disabled,
+            IgnoreRain = z.IgnoreRain,
+            IgnoreSensor = z.IgnoreSensor,
+        };
+
+        public Zone ToEntity() => new()
+        {
+            Id = Id,
+            HardwareBit = HardwareBit,
+            Name = Name.Trim(),
+            Group = Group,
+            BoundToMaster1 = BoundToMaster1,
+            BoundToMaster2 = BoundToMaster2,
+            Disabled = Disabled,
+            IgnoreRain = IgnoreRain,
+            IgnoreSensor = IgnoreSensor,
+        };
+    }
+}

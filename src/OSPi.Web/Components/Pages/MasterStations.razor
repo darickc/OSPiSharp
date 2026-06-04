@@ -1,0 +1,131 @@
+@page "/config/masters"
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@inject IMasterStationRepository MasterRepo
+@inject IZoneRepository ZoneRepo
+
+<PageTitle>Master Stations</PageTitle>
+
+<h1>Master Stations</h1>
+<p class="text-muted">Two master (pump/valve) stations that activate while bound zones run. Lead/lag adjustments are signed seconds.</p>
+
+@if (_models is null || _zones is null)
+{
+    <p><em>Loading…</em></p>
+}
+else
+{
+    <div class="row g-3">
+        @foreach (var model in _models)
+        {
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">Master @model.MasterIndex</div>
+                    <div class="card-body">
+                        <EditForm Model="model" OnValidSubmit="() => SaveAsync(model)">
+                            <DataAnnotationsValidator />
+
+                            <div class="mb-3">
+                                <label class="form-label">Driven by zone</label>
+                                <InputSelect class="form-select" @bind-Value="model.ZoneId">
+                                    <option value="">(unconfigured)</option>
+                                    @foreach (var zone in _zones)
+                                    {
+                                        <option value="@zone.Id">@ZoneLabel(zone)</option>
+                                    }
+                                </InputSelect>
+                            </div>
+
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <label class="form-label">On adjust (s)</label>
+                                    <InputNumber class="form-control" @bind-Value="model.OnAdjustSeconds" />
+                                    <ValidationMessage For="() => model.OnAdjustSeconds" />
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label">Off adjust (s)</label>
+                                    <InputNumber class="form-control" @bind-Value="model.OffAdjustSeconds" />
+                                    <ValidationMessage For="() => model.OffAdjustSeconds" />
+                                </div>
+                            </div>
+
+                            <SaveCancelToolbar Busy="model.Busy" OnCancel="ReloadAsync" CancelText="Reset" />
+
+                            @if (model.Saved)
+                            {
+                                <div class="alert alert-success mt-3 py-2 mb-0" role="alert">Saved.</div>
+                            }
+                        </EditForm>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<MasterModel>? _models;
+    private IReadOnlyList<Zone>? _zones;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _zones = await ZoneRepo.GetAllAsync();
+        var masters = await MasterRepo.GetAllAsync();
+        _models = masters.Select(MasterModel.FromEntity).ToList();
+    }
+
+    private static string ZoneLabel(Zone z) =>
+        string.IsNullOrWhiteSpace(z.Name) ? $"Zone {z.HardwareBit + 1}" : z.Name;
+
+    private async Task SaveAsync(MasterModel model)
+    {
+        model.Busy = true;
+        model.Saved = false;
+        try
+        {
+            await MasterRepo.UpdateAsync(model.ToEntity());
+            model.Saved = true;
+        }
+        finally
+        {
+            model.Busy = false;
+        }
+    }
+
+    private sealed class MasterModel
+    {
+        public int Id { get; set; }
+        public int MasterIndex { get; set; }
+        public int? ZoneId { get; set; }
+
+        [Range(-600, 600, ErrorMessage = "On adjust must be between -600 and 600 seconds.")]
+        public int OnAdjustSeconds { get; set; }
+
+        [Range(-600, 600, ErrorMessage = "Off adjust must be between -600 and 600 seconds.")]
+        public int OffAdjustSeconds { get; set; }
+
+        public bool Busy { get; set; }
+        public bool Saved { get; set; }
+
+        public static MasterModel FromEntity(MasterStation m) => new()
+        {
+            Id = m.Id,
+            MasterIndex = m.MasterIndex,
+            ZoneId = m.ZoneId,
+            OnAdjustSeconds = m.OnAdjustSeconds,
+            OffAdjustSeconds = m.OffAdjustSeconds,
+        };
+
+        // Only ZoneId is set — leaving the Zone navigation null avoids EF re-attaching a zone.
+        public MasterStation ToEntity() => new()
+        {
+            Id = Id,
+            MasterIndex = MasterIndex,
+            ZoneId = ZoneId,
+            OnAdjustSeconds = OnAdjustSeconds,
+            OffAdjustSeconds = OffAdjustSeconds,
+        };
+    }
+}

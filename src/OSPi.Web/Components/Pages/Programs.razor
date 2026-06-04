@@ -1,0 +1,117 @@
+@page "/config/programs"
+@rendermode InteractiveServer
+@using ProgramEntity = OSPi.Domain.Entities.Program
+@inject IProgramRepository ProgramRepo
+@inject NavigationManager Nav
+
+<PageTitle>Programs</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center">
+    <h1>Programs</h1>
+    <a class="btn btn-primary" href="config/programs/new">New program</a>
+</div>
+<p class="text-muted">Watering programs — what runs, when, and for how long.</p>
+
+@if (_programs is null)
+{
+    <p><em>Loading…</em></p>
+}
+else if (_programs.Count == 0)
+{
+    <div class="alert alert-light border" role="alert">
+        No programs yet. <a href="config/programs/new">Create one</a>.
+    </div>
+}
+else
+{
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Enabled</th>
+                <th>Schedule</th>
+                <th>Start times</th>
+                <th class="text-end">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var program in _programs)
+            {
+                <tr>
+                    <td>@(string.IsNullOrWhiteSpace(program.Name) ? "(unnamed)" : program.Name)</td>
+                    <td>
+                        @if (program.Enabled)
+                        {
+                            <span class="badge text-bg-success">Enabled</span>
+                        }
+                        else
+                        {
+                            <span class="badge text-bg-secondary">Disabled</span>
+                        }
+                    </td>
+                    <td>@DisplayLabels.ScheduleType(program.ScheduleType)</td>
+                    <td class="text-muted">@StartTimesSummary(program)</td>
+                    <td class="text-end">
+                        <a class="btn btn-sm btn-outline-primary me-1" href="@($"config/programs/{program.Id}")">Edit</a>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => AskDelete(program)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<ConfirmDeleteModal Visible="_pendingDelete is not null"
+                    Title="Delete program"
+                    Message="@($"Delete \"{_pendingDelete?.Name}\"? This cannot be undone.")"
+                    OnConfirm="ConfirmDeleteAsync"
+                    OnCancel="() => _pendingDelete = null" />
+
+@code {
+    private IReadOnlyList<ProgramEntity>? _programs;
+    private ProgramEntity? _pendingDelete;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _programs = await ProgramRepo.GetAllAsync();
+    }
+
+    private void AskDelete(ProgramEntity program) => _pendingDelete = program;
+
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_pendingDelete is not null)
+        {
+            await ProgramRepo.DeleteAsync(_pendingDelete.Id);
+            _pendingDelete = null;
+            await LoadAsync();
+        }
+    }
+
+    private static string StartTimesSummary(ProgramEntity p)
+    {
+        if (p.StartTimeType == StartTimeType.Repeating)
+        {
+            var anchor = p.StartTimes.OrderBy(s => s.Slot).FirstOrDefault();
+            var anchorText = anchor is null ? "—" : Describe(anchor);
+            return p.RepeatCount > 0
+                ? $"{anchorText}, then ×{p.RepeatCount} every {p.RepeatEveryMinutes}m"
+                : anchorText;
+        }
+
+        var times = p.StartTimes.OrderBy(s => s.Slot).Select(Describe).ToList();
+        return times.Count == 0 ? "—" : string.Join(", ", times);
+    }
+
+    private static string Describe(OSPi.Domain.Entities.ProgramStartTime st) => st.Kind switch
+    {
+        StartTimeKind.FixedMinute => $"{st.Value / 60:D2}:{st.Value % 60:D2}",
+        StartTimeKind.SunriseOffset => $"Sunrise{Signed(st.Value)}",
+        StartTimeKind.SunsetOffset => $"Sunset{Signed(st.Value)}",
+        _ => st.Value.ToString(),
+    };
+
+    private static string Signed(int minutes) => minutes == 0 ? "" : (minutes > 0 ? $"+{minutes}m" : $"{minutes}m");
+}

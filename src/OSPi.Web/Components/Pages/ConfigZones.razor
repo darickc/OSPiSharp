@@ -1,0 +1,75 @@
+@page "/config/zones"
+@rendermode InteractiveServer
+@inject IZoneRepository ZoneRepo
+@inject NavigationManager Nav
+
+<PageTitle>Zones</PageTitle>
+
+<h1>Zones</h1>
+<p class="text-muted">The 16 physical zones. Names, grouping, and bindings are editable; the hardware bit is fixed.</p>
+
+@if (_zones is null)
+{
+    <p><em>Loading…</em></p>
+}
+else
+{
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th style="width: 4rem;">Bit</th>
+                <th>Name</th>
+                <th>Group</th>
+                <th>Masters</th>
+                <th>Flags</th>
+                <th class="text-end">Edit</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var zone in _zones)
+            {
+                <tr>
+                    <td>@zone.HardwareBit</td>
+                    <td>@(string.IsNullOrWhiteSpace(zone.Name) ? $"Zone {zone.HardwareBit + 1}" : zone.Name)</td>
+                    <td>@DisplayLabels.ZoneGroup(zone.Group)</td>
+                    <td>
+                        @if (zone.BoundToMaster1)
+                        {
+                            <span class="badge text-bg-secondary me-1">M1</span>
+                        }
+                        @if (zone.BoundToMaster2)
+                        {
+                            <span class="badge text-bg-secondary me-1">M2</span>
+                        }
+                    </td>
+                    <td>
+                        @if (zone.Disabled)
+                        {
+                            <span class="badge text-bg-warning me-1">Disabled</span>
+                        }
+                        @if (zone.IgnoreRain)
+                        {
+                            <span class="badge text-bg-light me-1">Ignore rain</span>
+                        }
+                        @if (zone.IgnoreSensor)
+                        {
+                            <span class="badge text-bg-light me-1">Ignore sensor</span>
+                        }
+                    </td>
+                    <td class="text-end">
+                        <a class="btn btn-sm btn-outline-primary" href="@($"config/zones/{zone.Id}")">Edit</a>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IReadOnlyList<Zone>? _zones;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _zones = await ZoneRepo.GetAllAsync();
+    }
+}
