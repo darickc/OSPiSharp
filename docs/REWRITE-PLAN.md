@@ -223,6 +223,17 @@ matching the old firmware's scheduling behavior provably.
   than the originally-sketched SVG `viewBox`, because the click event's `offsetX` is a CSS pixel (not
   user-space) value, so a known-size box is the robust JS-free approach; (2) the image uploads over the
   circuit via `IBrowserFile` — only the *serve* path is a Minimal-API endpoint.
+- **PWA service worker fix (v2 → v3): ✅ complete.** (landed 2026-06-04) Found a latent Phase-3 bug:
+  the service worker precached `'/'` and served it **cache-first**, so the home page (the only HTML
+  *document* in the shell list) loaded from a stale cached copy. That is incompatible with Blazor
+  **enhanced navigation** (on by default via `blazor.web.js`), which reconciles fresh server-rendered
+  component-operation markers against live state — the cached document threw *"The list of component
+  operations is not valid"* in the browser console (no .NET error), home-page-only. Fix in
+  `service-worker.js`: removed `'/'` from `SHELL` (static assets only), added a `request.mode ===
+  'navigate'` bypass so document navigations always hit the network, and bumped the cache to
+  `ospisharp-shell-v3` so the `activate` handler purges the poisoned v2 cache. Verified (Sim driver):
+  the v3 cache holds only the static shell (no `/` entry), a fresh `/` load and enhanced navigation
+  `/`→`/zones`→`/` both produce no `component operations` error, and the static shell still caches.
 - **Phase 6 — MCP server:** not started.
 
 ## Reference files to port (from the OpenSprinkler-Firmware C++ repo; read, do not modify)
