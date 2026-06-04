@@ -34,6 +34,7 @@ public sealed class SprinklerEngine : BackgroundService
     private readonly ILogger<SprinklerEngine> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ISolarCalculator _solar;
+    private readonly IRunLogWriter _runLog;
     private readonly TimeProvider _clock;
 
     private readonly Channel<EngineCommand> _commands =
@@ -41,6 +42,13 @@ public sealed class SprinklerEngine : BackgroundService
 
     /// <summary>Final desired on/off state per hardware bit. Mutated only on the loop thread.</summary>
     private readonly bool[] _desired;
+
+    /// <summary>
+    /// Queue-driven on state per bit, before the pause-suppress and manual overlays. Run logging
+    /// keys off this (not <see cref="_desired"/>) so a pause does not spuriously close+reopen a run
+    /// and indefinite manual toggles — which never enter the queue — are excluded from history.
+    /// </summary>
+    private readonly bool[] _logicalOn;
 
     /// <summary>Indefinite manual overrides (Phase-0 dashboard toggles), OR'd over the queue.</summary>
     private readonly bool[] _manual;
@@ -55,6 +63,12 @@ public sealed class SprinklerEngine : BackgroundService
 
     /// <summary>Per-bit earliest-start assignment for the current tick, retained for status projection.</summary>
     private readonly LiveQueueItem?[] _assignedByBit;
+
+    /// <summary>An open (still-running) run being timed for the run log, per hardware bit.</summary>
+    private readonly record struct OpenRun(int ZoneId, long StartEpochSec, int? ProgramId);
+
+    /// <summary>Per-bit run currently being timed, or null when the bit is logically off. Loop-thread only.</summary>
+    private readonly OpenRun?[] _openRuns;
 
     private long _lastEpochMinute = long.MinValue;
     private long _pauseUntilSec;
@@ -78,6 +92,7 @@ public sealed class SprinklerEngine : BackgroundService
         ILogger<SprinklerEngine> logger,
         IServiceScopeFactory scopeFactory,
         ISolarCalculator solar,
+        IRunLogWriter? runLog = null,
         TimeProvider? clock = null)
     {
         _driver = driver;
@@ -85,10 +100,13 @@ public sealed class SprinklerEngine : BackgroundService
         _logger = logger;
         _scopeFactory = scopeFactory;
         _solar = solar;
+        _runLog = runLog ?? new NullRunLogWriter();
         _clock = clock ?? TimeProvider.System;
         _desired = new bool[driver.ZoneCount];
+        _logicalOn = new bool[driver.ZoneCount];
         _manual = new bool[driver.ZoneCount];
         _assignedByBit = new LiveQueueItem?[driver.ZoneCount];
+        _openRuns = new OpenRun?[driver.ZoneCount];
     }
 
     /// <summary>Post a command to be applied at the top of the next tick.</summary>
@@ -128,6 +146,9 @@ public sealed class SprinklerEngine : BackgroundService
         }
         finally
         {
+            // Close any run still open so a coil energized at shutdown produces a history row.
+            // Best-effort: a hard process exit may drop the in-flight off-thread write.
+            FlushOpenRuns(_clock.GetUtcNow().ToUnixTimeSeconds());
             Array.Clear(_desired);
             _driver.Apply(_desired);
             _logger.LogInformation("SprinklerEngine stopped; all zones turned off.");
@@ -167,6 +188,7 @@ public sealed class SprinklerEngine : BackgroundService
         }
 
         RunPerSecondQueueExecution(nowSec);
+        TrackRuns(nowSec);
         DriveAndPublish(nowSec);
     }
 
@@ -266,6 +288,7 @@ public sealed class SprinklerEngine : BackgroundService
     private void RunPerSecondQueueExecution(long nowSec)
     {
         Array.Clear(_desired);
+        Array.Clear(_logicalOn);
         Array.Clear(_assignedByBit);
 
         // Assign the earliest-start queue item to each hardware bit (firmware station_qid).
@@ -277,12 +300,13 @@ public sealed class SprinklerEngine : BackgroundService
             if (current is null || q.StartEpochSec < current.StartEpochSec) _assignedByBit[bit] = q;
         }
 
-        // Time-keeping: a zone is on iff now is within [start, start + duration).
+        // Time-keeping: a zone is on iff now is within [start, start + duration). This is the
+        // queue-driven "logical on" state; run logging keys off it (before pause/manual overlays).
         for (int bit = 0; bit < _assignedByBit.Length; bit++)
         {
             var q = _assignedByBit[bit];
             if (q is null) continue;
-            if (nowSec >= q.StartEpochSec && nowSec < q.StartEpochSec + q.DurationSeconds) _desired[bit] = true;
+            if (nowSec >= q.StartEpochSec && nowSec < q.StartEpochSec + q.DurationSeconds) _logicalOn[bit] = true;
         }
 
         // Master stations: on iff some bound zone is within its lead/lag window (relative to now).
@@ -291,13 +315,81 @@ public sealed class SprinklerEngine : BackgroundService
             var rel = LiveToRelative(nowSec);
             foreach (var m in _masters)
             {
-                if (m.MasterHardwareBit < 0 || m.MasterHardwareBit >= _desired.Length) continue;
-                if (StationScheduler.MasterShouldBeOn(m, rel, 0)) _desired[m.MasterHardwareBit] = true;
+                if (m.MasterHardwareBit < 0 || m.MasterHardwareBit >= _logicalOn.Length) continue;
+                if (StationScheduler.MasterShouldBeOn(m, rel, 0)) _logicalOn[m.MasterHardwareBit] = true;
             }
         }
 
+        // _desired starts as a copy of the queue-driven state; pause/manual overlays are applied
+        // later in DriveAndPublish without disturbing the run-logging signal.
+        Array.Copy(_logicalOn, _desired, _desired.Length);
+
         // Dequeue expired items (firmware: !dur || now >= deque_time).
         _queue.RemoveAll(q => q.DurationSeconds <= 0 || nowSec >= q.DequeueEpochSec);
+    }
+
+    // ===== Run-log tracking (firmware: log a station when it turns off) =====
+
+    /// <summary>
+    /// Detect run start/end transitions from the queue-driven <see cref="_logicalOn"/> state and
+    /// emit a run-log entry for each contiguous run as it ends. Keying off the logical state (not
+    /// the pause/manual-masked <see cref="_desired"/>) means a pause logs one spanning run, and
+    /// indefinite manual zones — never in the queue — are not logged.
+    /// </summary>
+    private void TrackRuns(long nowSec)
+    {
+        for (int bit = 0; bit < _logicalOn.Length; bit++)
+        {
+            var open = _openRuns[bit];
+            bool wasOpen = open is not null;
+            bool isOnNow = _logicalOn[bit];
+            var assigned = _assignedByBit[bit];
+
+            if (isOnNow && !wasOpen)
+            {
+                // Run just started. Masters (no assigned queue item) are not logged.
+                if (assigned is not null) _openRuns[bit] = OpenFrom(assigned, nowSec);
+            }
+            else if (wasOpen && !isOnNow)
+            {
+                // Run ended: expiry, preempt-trim, StopAll, or rain-delay clear.
+                CloseRun(bit, nowSec);
+            }
+            else if (wasOpen && isOnNow && assigned is not null && assigned.ZoneId != open!.Value.ZoneId)
+            {
+                // A different queue item took over the same bit with no intervening off-second.
+                CloseRun(bit, nowSec);
+                _openRuns[bit] = OpenFrom(assigned, nowSec);
+            }
+        }
+    }
+
+    private static OpenRun OpenFrom(LiveQueueItem item, long startSec) =>
+        new(item.ZoneId, startSec, item.ProgramId == 0 ? null : item.ProgramId);
+
+    /// <summary>Close the open run on <paramref name="bit"/> and persist it (observed duration).</summary>
+    private void CloseRun(int bit, long endEpochSec)
+    {
+        var open = _openRuns[bit];
+        if (open is null) return;
+        _openRuns[bit] = null;
+
+        var run = open.Value;
+        int duration = (int)(endEpochSec - run.StartEpochSec);
+        if (duration <= 0) return; // a run observed for <1s carries no useful history
+
+        _runLog.Write(
+            run.ZoneId,
+            run.ProgramId,
+            DateTimeOffset.FromUnixTimeSeconds(run.StartEpochSec),
+            DateTimeOffset.FromUnixTimeSeconds(endEpochSec),
+            duration);
+    }
+
+    /// <summary>Close every open run as of <paramref name="nowSec"/> (StopAll, shutdown).</summary>
+    private void FlushOpenRuns(long nowSec)
+    {
+        for (int bit = 0; bit < _openRuns.Length; bit++) CloseRun(bit, nowSec);
     }
 
     private void DriveAndPublish(long nowSec)

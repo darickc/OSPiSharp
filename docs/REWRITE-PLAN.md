@@ -97,7 +97,44 @@ matching the old firmware's scheduling behavior provably.
   sequential+master with 0→±1 coercion). Browser smoke (Sim driver): app boots, UTC-offset field
   round-trips to DB, manual zone toggle + Stop-all drive through the restructured engine, no
   console errors.
-- **Phases 3–6:** not started.
+- **Phase 3 — Real-time UI + PWA shell: ✅ complete.** (landed 2026-06-04, three chunks)
+  **Chunk A — Run-log write path.** The engine now emits a `RunLogEntry` for each contiguous zone
+  run. Transition detection keys off a new queue-driven `_logicalOn[]` state (computed in
+  `RunPerSecondQueueExecution`, copied into `_desired` before the pause/manual overlays) rather than
+  the masked `_desired`, so a pause logs **one** spanning run and indefinite manual toggles — never
+  in the queue — are excluded. `TrackRuns`/`CloseRun` open on first logical-on second, close on
+  expiry/preempt-trim/StopAll/rain-clear (and a back-to-back same-bit handoff), recording the
+  *observed* duration; the queue item already carries the real `Zone.Id` and `ProgramId` (0→null).
+  Open runs are flushed on engine shutdown. Writes go through a new injectable `IRunLogWriter` seam:
+  `OffThreadRunLogWriter` (the established `Task.Run` + scoped-repo pattern) in production, a
+  synchronous `RecordingRunLogWriter` in tests. New optional engine ctor arg `IRunLogWriter? runLog`
+  (defaults to `NullRunLogWriter`). 7 new run-log tests, incl. the pause-spans-one-row regression
+  guard and the preempt-splits-into-two-rows case (durations sum to the planned total).
+  **Chunk B — Dashboard + controls + history.** `IManualRunService` expanded with `RunProgram`,
+  `RunZoneTimed` (arg is the hardware bit), `SetRainDelay`, `Pause`, `Resume`. New
+  `SnapshotComponentBase` extracts the subscribe/`StateHasChanged`/dispose boilerplate. `/zones`
+  rewritten into a live dashboard: per-zone cards with on/queued/off state, `mm:ss` countdowns
+  (driven by the 1 s snapshot push — no JS timer), owning-program name, and a per-card timed-run
+  control; a status bar (paused / rain-delay-until / water-level%) and global Run-Program /
+  Rain-Delay / Pause-Resume / Stop-All controls. New `/log` History page over
+  `IRunLogRepository.GetRecentAsync` (now `Include`s Zone + Program; "Manual" for null program).
+  **Fixed a latent bug:** SQLite cannot `ORDER BY` a `DateTimeOffset` (stored as TEXT) — the recent
+  query now orders by identity `Id` descending (monotonic with completion for an append-only log).
+  **Chunk C — PWA shell.** `manifest.webmanifest` (standalone, theme `#1b1b2f`), committed icons
+  (192/512 + maskable 512, rasterized from `icon.svg`), a hand-written `service-worker.js` that
+  pre-caches only the static shell and **bypasses `/_blazor`, `/_framework`, and non-GET** so the
+  circuit is untouched, registered at root scope in `App.razor`. Installable but **not**
+  offline-functional (the circuit needs the LAN link to the Pi). Verified: `dotnet build`/`dotnet
+  test` green (**89 tests**, +7 this phase); browser smoke (Sim driver) — timed run turns a zone
+  ON with a live countdown labelled "Manual", Pause suppresses output while the run stays open,
+  Resume/Stop-All/Rain-Delay-Clear all drive through the engine, the run appears on `/log` with its
+  observed (cut-short) duration, the SW registers at scope `/` and the live circuit keeps pushing
+  snapshots through it; no console errors.
+  **Divergences from this plan (intentional):** (1) **No SignalR hub** — the Blazor Server circuit
+  *is* SignalR, so the dashboard consumes `IStateHub` directly; the planned `IHubContext<SprinklerHub>`
+  broadcaster was unnecessary. (2) **`SixLabors.ImageSharp` deferred to Phase 5** — PWA icons are
+  committed static assets, so the dependency lands with the property-map image re-encode instead.
+- **Phases 4–6:** not started.
 
 ## Reference files to port (from the OpenSprinkler-Firmware C++ repo; read, do not modify)
 

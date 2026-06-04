@@ -36,6 +36,9 @@ public static class DependencyInjection
 
         services.AddSingleton<IStateHub, InMemoryStateHub>();
 
+        // Persists completed runs off-thread through a scoped IRunLogRepository.
+        services.AddSingleton<IRunLogWriter, OffThreadRunLogWriter>();
+
         // Pure sunrise/sunset math — stateless, safe as a singleton.
         services.AddSingleton<ISolarCalculator, SolarCalculatorService>();
 

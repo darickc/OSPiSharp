@@ -24,7 +24,7 @@ public class SprinklerEngineTests
             [typeof(IControllerSettingsRepository)] = new FakeControllerSettingsRepository(),
         });
         var engine = new SprinklerEngine(driver, hub, NullLogger<SprinklerEngine>.Instance,
-            scopeFactory, new FixedSolarCalculator(), time);
+            scopeFactory, new FixedSolarCalculator(), clock: time);
 
         await engine.StartAsync(CancellationToken.None);
         // The host starts ExecuteAsync on a background thread, so wait for the engine's

@@ -1,0 +1,63 @@
+@page "/log"
+@rendermode InteractiveServer
+@inject IRunLogRepository RunLogRepo
+
+<PageTitle>History</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center">
+    <h1>History</h1>
+    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadAsync">Refresh</button>
+</div>
+<p class="text-muted">Recent completed zone runs (most recent first).</p>
+
+@if (_entries is null)
+{
+    <p><em>Loading…</em></p>
+}
+else if (_entries.Count == 0)
+{
+    <div class="alert alert-light border" role="alert">No runs recorded yet.</div>
+}
+else
+{
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>Zone</th>
+                <th>Program</th>
+                <th>Started</th>
+                <th class="text-end">Duration</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var e in _entries)
+            {
+                <tr>
+                    <td>@ZoneName(e)</td>
+                    <td>@ProgramName(e)</td>
+                    <td>@e.StartTime.ToLocalTime().ToString("g")</td>
+                    <td class="text-end">@Fmt(e.DurationSeconds)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IReadOnlyList<RunLogEntry>? _entries;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _entries = await RunLogRepo.GetRecentAsync(100);
+    }
+
+    private static string ZoneName(RunLogEntry e) =>
+        string.IsNullOrWhiteSpace(e.Zone?.Name) ? $"Zone {e.ZoneId}" : e.Zone!.Name;
+
+    private static string ProgramName(RunLogEntry e) =>
+        e.ProgramId is null ? "Manual" : e.Program?.Name ?? "(deleted program)";
+
+    private static string Fmt(int seconds) => $"{seconds / 60:D2}:{seconds % 60:D2}";
+}

@@ -60,6 +60,22 @@ internal sealed class FakeControllerSettingsRepository : IControllerSettingsRepo
     }
 }
 
+/// <summary>Records run-log writes synchronously on the tick thread for deterministic assertions.</summary>
+internal sealed class RecordingRunLogWriter : IRunLogWriter
+{
+    public List<RunLogEntry> Entries { get; } = new();
+
+    public void Write(int zoneId, int? programId, DateTimeOffset start, DateTimeOffset end, int durationSeconds) =>
+        Entries.Add(new RunLogEntry
+        {
+            ZoneId = zoneId,
+            ProgramId = programId,
+            StartTime = start,
+            EndTime = end,
+            DurationSeconds = durationSeconds,
+        });
+}
+
 /// <summary>Returns fixed sunrise/sunset minutes regardless of date.</summary>
 internal sealed class FixedSolarCalculator : ISolarCalculator
 {
@@ -93,6 +109,7 @@ internal sealed class EngineHarness
     public FakeTimeProvider Time { get; }
     public RecordingProgramRepository Programs { get; }
     public FakeControllerSettingsRepository SettingsRepo { get; }
+    public RecordingRunLogWriter RunLog { get; }
 
     private readonly List<bool[]> _frames = new(); // _frames[k-1] = state after tick k
     private readonly List<StatusSnapshot> _snaps = new();
@@ -105,6 +122,7 @@ internal sealed class EngineHarness
         Time = new FakeTimeProvider(start);
         Programs = new RecordingProgramRepository();
         SettingsRepo = new FakeControllerSettingsRepository { Settings = data.Settings };
+        RunLog = new RecordingRunLogWriter();
 
         var scopeFactory = new FakeScopeFactory(new Dictionary<Type, object>
         {
@@ -114,7 +132,7 @@ internal sealed class EngineHarness
         });
 
         Engine = new SprinklerEngine(Driver, Hub, NullLogger<SprinklerEngine>.Instance,
-            scopeFactory, new FixedSolarCalculator(sunrise, sunset), Time);
+            scopeFactory, new FixedSolarCalculator(sunrise, sunset), RunLog, Time);
         Engine.PrimeForTest(data);
     }
 

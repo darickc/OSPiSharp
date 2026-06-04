@@ -18,4 +18,22 @@ public interface IManualRunService
 
     /// <summary>Turn every zone off immediately.</summary>
     void StopAll();
+
+    /// <summary>Start a program now (insert-front), ignoring its calendar match.</summary>
+    void RunProgram(int programId);
+
+    /// <summary>
+    /// Run a single zone for a fixed number of seconds (insert-front). The identifier is the
+    /// zone's <em>hardware bit</em> (matching <c>ZoneStatus.ZoneId</c>), not its entity id.
+    /// </summary>
+    void RunZoneTimed(int hardwareBit, int seconds);
+
+    /// <summary>Start a rain delay for the given minutes, or clear it when <paramref name="minutes"/> ≤ 0.</summary>
+    void SetRainDelay(int minutes);
+
+    /// <summary>Suppress hardware output for the given seconds while the queue keeps advancing.</summary>
+    void Pause(int seconds);
+
+    /// <summary>Resume hardware output after a <see cref="Pause"/>.</summary>
+    void Resume();
 }

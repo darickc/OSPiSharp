@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#1b1b2f"/>
+  <!-- Water droplet, centered within the maskable safe zone -->
+  <path d="M256 96 C256 96 152 224 152 304 a104 104 0 0 0 208 0 C360 224 256 96 256 96 Z"
+        fill="#4dabf7"/>
+  <path d="M300 300 a44 44 0 0 1 -44 44 a8 8 0 0 1 0 -16 a28 28 0 0 0 28 -28 a8 8 0 0 1 16 0 Z"
+        fill="#e7f5ff"/>
+</svg>

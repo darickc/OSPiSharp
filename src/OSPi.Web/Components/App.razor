@@ -11,6 +11,9 @@
     <link rel="stylesheet" href="@Assets["OSPi.Web.styles.css"]" />
     <ImportMap />
     <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <meta name="theme-color" content="#1b1b2f" />
     <HeadOutlet @rendermode="InteractiveServer" />
 </head>
 
@@ -18,6 +21,12 @@
     <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script>
+        // Register at the unfingerprinted root path so the worker's scope is "/".
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('service-worker.js');
+        }
+    </script>
 </body>
 
 </html>

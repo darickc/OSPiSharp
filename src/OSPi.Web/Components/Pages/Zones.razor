@@ -1,83 +1,187 @@
 @page "/zones"
 @rendermode InteractiveServer
-@implements IDisposable
+@inherits SnapshotComponentBase
+@using ProgramEntity = OSPi.Domain.Entities.Program
 @inject IManualRunService ManualRun
-@inject IStateHub StateHub
+@inject IZoneRepository ZoneRepo
+@inject IProgramRepository ProgramRepo
 
-<PageTitle>Zones</PageTitle>
+<PageTitle>Dashboard</PageTitle>
 
-<h1>Zones</h1>
-<p class="text-muted">Phase 0 walking skeleton: toggle a zone and watch it flip on the simulated board.</p>
+<h1>Dashboard</h1>
 
-<div class="mb-3">
-    <button class="btn btn-danger" @onclick="StopAll">Stop all</button>
-    @if (_snapshot is not null)
-    {
-        <span class="ms-3 text-muted">Last update: @_snapshot.TimestampUtc.ToLocalTime().ToString("T")</span>
-    }
-</div>
-
-@if (_snapshot is null)
+@if (Snapshot is null)
 {
     <p><em>Waiting for engine…</em></p>
 }
 else
 {
-    <div class="zone-grid">
-        @foreach (var zone in _snapshot.Zones)
+    <div class="status-bar mb-3">
+        <span class="status-chip @(Snapshot.Paused ? "warn" : "")">
+            @(Snapshot.Paused ? "Paused" : "Running")
+        </span>
+        @if (Snapshot.RainDelayUntil is { } until)
         {
-            <button class="zone-card @(zone.On ? "on" : "off")"
-                    @onclick="() => Toggle(zone.ZoneId, !zone.On)">
-                <span class="zone-id">Zone @(zone.ZoneId + 1)</span>
-                <span class="zone-state">@(zone.On ? "ON" : "OFF")</span>
-            </button>
+            <span class="status-chip warn">Rain delay until @until.ToLocalTime().ToString("g")</span>
+        }
+        <span class="status-chip">Water level @Snapshot.WaterLevelPercent%</span>
+        <span class="text-muted ms-auto small">Updated @Snapshot.TimestampUtc.ToLocalTime().ToString("T")</span>
+    </div>
+
+    <div class="controls mb-4">
+        <div class="control-group">
+            <select class="form-select form-select-sm" @bind="_selectedProgramId">
+                <option value="0" disabled>Choose a program…</option>
+                @foreach (var p in _enabledPrograms)
+                {
+                    <option value="@p.Id">@p.Name</option>
+                }
+            </select>
+            <button class="btn btn-sm btn-primary" disabled="@(_selectedProgramId == 0)" @onclick="RunProgram">Run program</button>
+        </div>
+
+        <div class="control-group">
+            <span class="input-group-text-sm">Rain delay</span>
+            <input class="form-control form-control-sm rain-input" type="number" min="0" @bind="_rainDelayMinutes" />
+            <span class="input-group-text-sm">min</span>
+            <button class="btn btn-sm btn-outline-primary" @onclick="SetRainDelay">Set</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="ClearRainDelay">Clear</button>
+        </div>
+
+        <div class="control-group">
+            @if (Snapshot.Paused)
+            {
+                <button class="btn btn-sm btn-outline-success" @onclick="Resume">Resume</button>
+            }
+            else
+            {
+                <input class="form-control form-control-sm rain-input" type="number" min="1" @bind="_pauseMinutes" />
+                <span class="input-group-text-sm">min</span>
+                <button class="btn btn-sm btn-outline-warning" @onclick="Pause">Pause</button>
+            }
+            <button class="btn btn-sm btn-danger ms-2" @onclick="StopAll">Stop all</button>
+        </div>
+    </div>
+
+    <div class="zone-grid">
+        @foreach (var zone in Snapshot.Zones)
+        {
+            <div class="zone-card @StateClass(zone)">
+                <span class="zone-id">@ZoneName(zone.ZoneId)</span>
+                <span class="zone-state">@StateLabel(zone)</span>
+                @if (zone.On && zone.SecondsRemaining is { } secs)
+                {
+                    <span class="zone-countdown">@Fmt(secs)</span>
+                }
+                <span class="zone-program">@ProgramLabel(zone)</span>
+                <div class="zone-run">
+                    <input class="form-control form-control-sm" type="number" min="1"
+                           @bind="_timedMinutes" />
+                    <button class="btn btn-sm btn-outline-primary" @onclick="() => RunZoneTimed(zone.ZoneId)">Run</button>
+                </div>
+            </div>
         }
     </div>
 }
 
 <style>
+    .status-bar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .status-chip { padding: 0.25rem 0.6rem; border-radius: 1rem; background: #e7f5ff; color: #1971c2; font-size: 0.8rem; font-weight: 600; }
+    .status-chip.warn { background: #fff3bf; color: #e67700; }
+    .controls { display: flex; flex-direction: column; gap: 0.5rem; max-width: 760px; }
+    .control-group { display: flex; align-items: center; gap: 0.4rem; }
+    .input-group-text-sm { font-size: 0.85rem; color: #495057; }
+    .rain-input { width: 5rem; }
+    .control-group .form-select { max-width: 18rem; }
+
     .zone-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
         gap: 0.75rem;
-        max-width: 760px;
+        max-width: 900px;
     }
     .zone-card {
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
-        padding: 1rem 0.5rem;
+        gap: 0.15rem;
+        padding: 0.75rem 0.5rem;
         border-radius: 0.75rem;
         border: 2px solid transparent;
-        cursor: pointer;
         font-weight: 600;
         transition: background-color .15s ease, border-color .15s ease;
     }
-    .zone-card.off { background: #f1f3f5; color: #495057; border-color: #dee2e6; }
-    .zone-card.on  { background: #d3f9d8; color: #2b8a3e; border-color: #2b8a3e; }
+    .zone-card.off    { background: #f1f3f5; color: #495057; border-color: #dee2e6; }
+    .zone-card.on     { background: #d3f9d8; color: #2b8a3e; border-color: #2b8a3e; }
+    .zone-card.queued { background: #fff3bf; color: #e67700; border-color: #f08c00; }
     .zone-id { font-size: 0.95rem; }
-    .zone-state { font-size: 0.8rem; opacity: 0.8; }
+    .zone-state { font-size: 0.75rem; opacity: 0.8; }
+    .zone-countdown { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+    .zone-program { font-size: 0.7rem; opacity: 0.7; min-height: 0.9rem; }
+    .zone-run { display: flex; gap: 0.25rem; margin-top: 0.4rem; }
+    .zone-run .form-control { width: 3.5rem; }
 </style>
 
 @code {
-    private StatusSnapshot? _snapshot;
+    private IReadOnlyDictionary<int, string> _zoneNames = new Dictionary<int, string>();
+    private IReadOnlyDictionary<int, string> _programNames = new Dictionary<int, string>();
+    private IReadOnlyList<(int Id, string Name)> _enabledPrograms = Array.Empty<(int, string)>();
 
-    protected override void OnInitialized()
+    private int _selectedProgramId;
+    private int _rainDelayMinutes = 60;
+    private int _pauseMinutes = 5;
+    private int _timedMinutes = 5;
+
+    protected override async Task OnInitializedAsync()
     {
-        _snapshot = StateHub.Latest;
-        StateHub.SnapshotPublished += OnSnapshot;
+        var zones = await ZoneRepo.GetAllAsync();
+        _zoneNames = zones.ToDictionary(
+            z => z.HardwareBit,
+            z => string.IsNullOrWhiteSpace(z.Name) ? $"Zone {z.HardwareBit + 1}" : z.Name);
+        await LoadProgramsAsync();
     }
 
-    private void OnSnapshot(StatusSnapshot snapshot)
+    private async Task LoadProgramsAsync()
     {
-        _snapshot = snapshot;
-        _ = InvokeAsync(StateHasChanged);
+        var programs = await ProgramRepo.GetAllAsync();
+        _programNames = programs.ToDictionary(p => p.Id, p => p.Name);
+        _enabledPrograms = programs
+            .Where(p => p.Enabled)
+            .Select(p => (p.Id, string.IsNullOrWhiteSpace(p.Name) ? $"Program {p.Id}" : p.Name))
+            .ToList();
     }
 
-    private void Toggle(int zoneId, bool on) => ManualRun.Toggle(zoneId, on);
+    private string ZoneName(int bit) => _zoneNames.GetValueOrDefault(bit, $"Zone {bit + 1}");
+
+    private static string StateClass(ZoneStatus z) => z.On ? "on" : z.Queued ? "queued" : "off";
+
+    private static string StateLabel(ZoneStatus z) => z.On ? "ON" : z.Queued ? "QUEUED" : "OFF";
+
+    private string ProgramLabel(ZoneStatus z)
+    {
+        if (z.ProgramId is { } id) return _programNames.GetValueOrDefault(id, $"Program {id}");
+        return z.On ? "Manual" : "—";
+    }
+
+    private static string Fmt(int seconds) => $"{seconds / 60:D2}:{seconds % 60:D2}";
+
+    private void RunProgram()
+    {
+        if (_selectedProgramId != 0) ManualRun.RunProgram(_selectedProgramId);
+    }
+
+    private void RunZoneTimed(int bit)
+    {
+        if (_timedMinutes > 0) ManualRun.RunZoneTimed(bit, _timedMinutes * 60);
+    }
+
+    private void SetRainDelay() => ManualRun.SetRainDelay(_rainDelayMinutes);
+
+    private void ClearRainDelay() => ManualRun.SetRainDelay(0);
+
+    private void Pause() => ManualRun.Pause(_pauseMinutes * 60);
+
+    private void Resume() => ManualRun.Resume();
 
     private void StopAll() => ManualRun.StopAll();
-
-    public void Dispose() => StateHub.SnapshotPublished -= OnSnapshot;
 }

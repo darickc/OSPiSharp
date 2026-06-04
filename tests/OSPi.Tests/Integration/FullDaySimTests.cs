@@ -42,7 +42,7 @@ public class FullDaySimTests
                 [typeof(IControllerSettingsRepository)] = new FakeControllerSettingsRepository(),
             });
             _engine = new SprinklerEngine(_driver, new InMemoryStateHub(), NullLogger<SprinklerEngine>.Instance,
-                scopeFactory, new FixedSolarCalculator(), _time);
+                scopeFactory, new FixedSolarCalculator(), clock: _time);
             _engine.PrimeForTest(data);
             _prev = new bool[zones];
         }
