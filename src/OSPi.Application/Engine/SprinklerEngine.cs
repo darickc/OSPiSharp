@@ -214,6 +214,15 @@ public sealed class SprinklerEngine : BackgroundService
                 case EngineCommand.RunZoneTimed run:
                     HandleRunZoneTimed(run.ZoneId, run.Seconds, nowSec);
                     break;
+                case EngineCommand.CancelZone cancel when IsValidZone(cancel.HardwareBit):
+                    // Remove the zone's queued/running item and any manual override. The next
+                    // per-second pass sees _logicalOn[bit] go false and closes the run-log entry.
+                    _queue.RemoveAll(q => q.HardwareBit == cancel.HardwareBit);
+                    _manual[cancel.HardwareBit] = false;
+                    break;
+                case EngineCommand.CancelZone cancel:
+                    _logger.LogWarning("Ignoring CancelZone for out-of-range bit {Bit}.", cancel.HardwareBit);
+                    break;
                 case EngineCommand.SetRainDelay rd:
                     HandleSetRainDelay(rd.Minutes);
                     break;

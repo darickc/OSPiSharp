@@ -28,6 +28,14 @@ public interface IManualRunService
     /// </summary>
     void RunZoneTimed(int hardwareBit, int seconds);
 
+    /// <summary>
+    /// Stop a single zone immediately, identified by its <em>hardware bit</em> (the counterpart to
+    /// <see cref="RunZoneTimed"/>). Cancels a running timed or program run by dropping its queue
+    /// item and clears any indefinite manual override; unlike <see cref="TurnOff"/>, a queued run
+    /// does not re-assert it on the next tick.
+    /// </summary>
+    void StopZone(int hardwareBit);
+
     /// <summary>Start a rain delay for the given minutes, or clear it when <paramref name="minutes"/> ≤ 0.</summary>
     void SetRainDelay(int minutes);
 

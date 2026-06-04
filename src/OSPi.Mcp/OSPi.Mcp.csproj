@@ -1,12 +1,17 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\OSPi.Application\OSPi.Application.csproj" />
     <ProjectReference Include="..\OSPi.Infrastructure\OSPi.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Tool/type attributes ([McpServerToolType], [McpServerTool]). The HTTP transport and
+         MapMcp live in ModelContextProtocol.AspNetCore, referenced by the Web host. -->
+    <PackageReference Include="ModelContextProtocol.Core" Version="1.4.0" />
+  </ItemGroup>
+
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

@@ -1,6 +1,7 @@
 using FluentAssertions;
 using OSPi.Application.Engine;
 using OSPi.Domain.Entities;
+using OSPi.Domain.Enums;
 
 namespace OSPi.Tests.Engine;
 
@@ -145,5 +146,34 @@ public class EngineRunLogTests
         h.RunLog.Entries.Should().ContainSingle();
         h.RunLog.Entries[0].ZoneId.Should().Be(1);
         h.RunLog.Entries[0].DurationSeconds.Should().Be(3, "the run is cut short, not logged as its planned 10s");
+    }
+
+    [Fact]
+    public void Cancel_zone_stops_only_that_zone_and_logs_its_observed_duration()
+    {
+        // Two parallel zones so we can prove CancelZone stops one without touching the other.
+        var zones = Build.Zones16();
+        zones[0].Group = ZoneGroup.Parallel;
+        zones[1].Group = ZoneGroup.Parallel;
+        var data = Build.Data(
+            Build.Settings(),
+            zones,
+            new[] { Build.FixedDaily(1, StartMinute, (1, 10, 0), (2, 10, 1)) });
+        var h = new EngineHarness(data, Anchor);
+
+        h.Steps(4);                  // bits 0 and 1 both on from tick 2 (parallel)
+        h.FrameAt(4)[0].Should().BeTrue();
+        h.FrameAt(4)[1].Should().BeTrue();
+
+        h.Engine.Post(new EngineCommand.CancelZone(0)); // stop zone 1 (hardware bit 0)
+        h.Step();                    // tick 5: bit 0's queue item dropped, its run closes
+
+        var frame = h.FrameAt(5);
+        frame[0].Should().BeFalse("the cancelled zone stops immediately");
+        frame[1].Should().BeTrue("the other zone keeps running");
+
+        h.RunLog.Entries.Should().ContainSingle("only the cancelled run has closed");
+        h.RunLog.Entries[0].ZoneId.Should().Be(1);
+        h.RunLog.Entries[0].DurationSeconds.Should().Be(3, "cut short, not its planned 10s");
     }
 }

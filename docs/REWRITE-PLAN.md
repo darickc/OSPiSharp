@@ -234,7 +234,48 @@ matching the old firmware's scheduling behavior provably.
   `ospisharp-shell-v3` so the `activate` handler purges the poisoned v2 cache. Verified (Sim driver):
   the v3 cache holds only the static shell (no `/` entry), a fresh `/` load and enhanced navigation
   `/`→`/zones`→`/` both produce no `component operations` error, and the static shell still caches.
-- **Phase 6 — MCP server:** not started.
+- **Phase 6 — MCP server: ✅ complete.** (landed 2026-06-04) Hosted **in-process in `OSPi.Web`**
+  (resolves open item #1) via the official **`ModelContextProtocol` C# SDK** (stable **1.4.0**, no longer
+  prerelease): `AddMcpServer().WithHttpTransport().WithToolsFromAssembly(typeof(SprinklerTools).Assembly)`
+  + `app.MapMcp("/mcp")` — streamable HTTP/SSE at `/mcp`, LAN-only, no auth (consistent with the rest of
+  the app), no CORS (non-browser client). The `OSPi.Mcp` stub was converted from an Exe into a tools
+  **class library** (refs `ModelContextProtocol.Core` 1.4.0 for the `[McpServerToolType]`/`[McpServerTool]`
+  attributes only — the AspNetCore transport package lives in `OSPi.Web`). One `[McpServerToolType]` static
+  class `SprinklerTools` exposes the eight planned tools as thin, stateless wrappers over the existing
+  application services (`IManualRunService` singleton, `IStateHub.Latest`, scoped `IZoneRepository`/
+  `IProgramRepository` injected per-call as tool-method parameters): `list_zones`, `list_programs`,
+  `get_status`, `run_zone`, `stop_zone`, `stop_all`, `run_program`, `set_rain_delay`. Every tool returns a
+  small DTO record (`ZoneInfo`/`ProgramInfo`/`StatusInfo`+`ZoneState`/`CommandResult`) — never an EF entity.
+  **Zone identity:** the AI sees **zone numbers 1–16** (= `HardwareBit + 1`, matching the dashboard's
+  "Zone N" labels); tools translate to the hardware bit (`run_zone`/`stop_zone`) or surface `Zone.Id`/program
+  id where the service needs it. `get_status` handles the pre-first-tick `IStateHub.Latest == null` with an
+  `EngineReady=false` projection rather than throwing; bad input (zone out of 1–16, non-positive minutes,
+  unknown program id) throws and surfaces as an MCP `isError` result.
+  **Engine change required (plan correction):** the plan assumed `stop_zone` could call `TurnOff`, but
+  `TurnOff` only clears the indefinite manual overlay — a *queued* timed/program run re-asserts the zone on
+  the next tick, so it could not stop a running zone (the dashboard only ever offered Stop-All). Added a
+  first-class per-zone cancel: new `EngineCommand.CancelZone(int HardwareBit)` (drops the bit's runtime-queue
+  item and clears its manual override; the existing per-second `TrackRuns`/`CloseRun` closes the run-log
+  entry next tick with the observed cut-short duration), surfaced as `IManualRunService.StopZone(int hardwareBit)`
+  — the symmetric counterpart to `RunZoneTimed`. `stop_zone` calls it by bit (no repo lookup needed).
+  Tests: new **`tests/OSPi.Mcp.Tests`** project (16 cases — number↔bit translation for run/stop, minutes→seconds,
+  out-of-range/non-positive validation, `get_status` projection incl. the null-snapshot path, list/DTO shapes,
+  `run_program` name-resolution + missing-id throw, rain-delay set/clear messaging) plus a new engine test
+  (`Cancel_zone_stops_only_that_zone_and_logs_its_observed_duration`, two parallel zones — proves one stops
+  while the other keeps running and logs the cut-short duration). **`dotnet build`/`dotnet test` green
+  (129 total: 96 OSPi.Tests +1, 17 OSPi.Web.Tests, 16 OSPi.Mcp.Tests).** Service worker bumped **v3 → v4**
+  (adds a `/mcp` bypass so the SSE stream always reaches the network; the `activate` purge drops v3).
+  **End-to-end verified with the Sim driver** (curl streamable-HTTP MCP client): initialize handshake +
+  `tools/list` returns all 8; `run_zone(3,5)` turns the zone ON (status `on=true secs=300`, SIM logs the bit
+  ON) and `stop_zone(3)` now genuinely clears it (`on=false`, SIM logs OFF); `set_rain_delay(30)` populates
+  `rainDelayUntil` then clears; `run_program(1)` queues the seeded program's zones (2/3/6) with 85% water-level
+  scaling; unknown program/zone ids return `isError`. **Browser smoke (preview, Sim driver):** dashboard boots
+  in the dark theme with no console errors, the SW registers and holds only the v4 static shell (no `/`, no
+  `/mcp`), and an MCP `run_zone(5,7)` drove the live circuit to show **"Zone 5 | ON | 06:53 | Manual"** with a
+  ticking countdown — proving MCP → engine → `IStateHub` → Blazor snapshot push all compose. **Divergences from
+  this plan (intentional):** (1) tools registered via `WithToolsFromAssembly` rather than `WithTools<T>` because
+  the SDK rejects a static class as a generic type argument; (2) `stop_zone` required the new engine
+  `CancelZone` command above rather than the planned `TurnOff`.
 
 ## Reference files to port (from the OpenSprinkler-Firmware C++ repo; read, do not modify)
 
@@ -378,7 +419,8 @@ service worker for PWA install (no extra package needed) · `System.Threading.Ch
 
 ## Open items to decide later (non-blocking)
 
-1. MCP in-process (recommended) vs. separate process — only matters at Phase 6.
+1. ~~MCP in-process (recommended) vs. separate process — only matters at Phase 6.~~
+   **Resolved (Phase 6): in-process in `OSPi.Web`** at `/mcp` (one engine/DbContext/driver).
 2. ~~Keep `AlternateReverse` ("flip order each run") or drop it now that order is explicit.~~
    **Resolved (Phase 4): dropped** — run order is now first-class and drag-editable.
 3. Installable PWA on Blazor Server is not offline-capable; revisit Blazor WASM/Auto render

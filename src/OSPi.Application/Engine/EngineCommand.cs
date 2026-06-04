@@ -23,6 +23,13 @@ public abstract record EngineCommand
     public sealed record RunZoneTimed(int ZoneId, int Seconds) : EngineCommand;
 
     /// <summary>
+    /// Stop a single zone: drop its runtime-queue item (cancelling a timed/program run) and clear
+    /// any indefinite manual override, identified by <em>hardware bit</em> like
+    /// <see cref="RunZoneTimed"/>. The per-second pass closes the run-log entry on the next tick.
+    /// </summary>
+    public sealed record CancelZone(int HardwareBit) : EngineCommand;
+
+    /// <summary>
     /// Start (or, with <c>Minutes &lt;= 0</c>, clear) a rain delay. While active, scheduled
     /// matches are suppressed for zones that do not ignore rain, and such queued/running
     /// zones are stopped.

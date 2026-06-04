@@ -2,6 +2,7 @@ using MudBlazor.Services;
 using OSPi.Application.Persistence;
 using OSPi.Infrastructure;
 using OSPi.Infrastructure.Persistence;
+using OSPi.Mcp;
 using OSPi.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +15,13 @@ builder.Services.AddMudServices();
 
 // Sprinkler hardware driver, state hub, scheduling engine, and application services.
 builder.Services.AddSprinklerCore(builder.Configuration);
+
+// In-process MCP server (streamable HTTP at /mcp) for AI control. SprinklerTools are stateless
+// wrappers over the same application services the UI uses; tool methods receive the singleton
+// IManualRunService/IStateHub and scoped repositories via per-request DI.
+builder.Services.AddMcpServer()
+    .WithHttpTransport()
+    .WithToolsFromAssembly(typeof(SprinklerTools).Assembly);
 
 var app = builder.Build();
 
@@ -60,5 +68,9 @@ app.MapGet("/property-map/image", async (
         : "image/jpeg";
     return Results.File(fullPath, contentType);
 });
+
+// MCP endpoint (streamable HTTP/SSE). It's a JSON/SSE API, not a form post, so it does not
+// opt into Blazor's antiforgery. LAN-only, no auth — consistent with the rest of the app.
+app.MapMcp("/mcp");
 
 app.Run();

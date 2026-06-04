@@ -21,6 +21,8 @@ public sealed class ManualRunService : IManualRunService
     public void RunZoneTimed(int hardwareBit, int seconds) =>
         _engine.Post(new EngineCommand.RunZoneTimed(hardwareBit, seconds));
 
+    public void StopZone(int hardwareBit) => _engine.Post(new EngineCommand.CancelZone(hardwareBit));
+
     public void SetRainDelay(int minutes) => _engine.Post(new EngineCommand.SetRainDelay(minutes));
 
     public void Pause(int seconds) => _engine.Post(new EngineCommand.Pause(seconds));
