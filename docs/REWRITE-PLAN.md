@@ -181,7 +181,49 @@ matching the old firmware's scheduling behavior provably.
   errors. (Drag-reorder and the add-zone `MudSelect` popover could not be script-driven in the headless
   preview — both depend on real browser drag/pointer events the harness can't synthesize — so they need
   a quick manual click-through; the reorder logic itself is unit-tested.)
-- **Phases 5–6:** not started.
+- **Phase 5 — Property map: ✅ complete.** (landed 2026-06-04) Engine/scheduler untouched — a
+  data-layer + UI phase reusing the existing snapshot and manual-run paths. **Data:** `PropertyMap`
+  (single seeded row `Id=1`, like `ControllerSettings`) + `MapMarker` join entity (unique
+  `(PropertyMapId, ZoneId)` so one pin per zone; FK to `Zone` `Restrict`, to `PropertyMap` `Cascade`;
+  normalized 0..1 `X`/`Y`); DbSets + EF configs + migration `AddPropertyMap`. **Image storage:** the
+  image is a **file in writable app-data** (`ImageStorageOptions` mirrors `DatabaseOptions` —
+  `{LocalApplicationData}/OSPiSharp/property-map`, *not* `wwwroot`, since the Pi's published binary dir
+  may be read-only); only path/hash/dimensions persist in the DB. Served by one Minimal-API
+  `GET /property-map/image` (`immutable` cache, `?v={hash}` bust, 404 when absent/file-missing). Upload
+  rides the **Blazor circuit via `IBrowserFile`** (no POST endpoint, no antiforgery); a new
+  `IPropertyMapImageProcessor` (SixLabors.ImageSharp 3.1, added to Infrastructure — Split License, free
+  Apache-2.0 terms for this use) downscales the longest edge to ≤1600, re-encodes JPEG q85 (PNG when the
+  source has alpha), and names the file by its SHA-256. `IPropertyMapRepository`: `GetAsync`
+  (`Include`s markers), `UpdateImageAsync` (**write-new → update-row → best-effort-delete-old** ordering),
+  `SaveMarkersAsync` (**merge-by-`ZoneId`** mirroring `ProgramRepository.SyncZoneDurations` — match/update/
+  remove, never clear-and-re-add, so the unique index never trips). **Zone identity:** `MapMarker.ZoneId`
+  references `Zone.Id`, but live-highlight + click-to-run use the **hardware bit** (`ZoneStatus.ZoneId`
+  *is* the bit; `RunZoneTimed` takes the bit) — both pages translate `Zone.Id→HardwareBit` in the page
+  layer. **UI:** `/config/property-map` editor (`MudFileUpload`'s 9.x `CustomContent`/`OpenFilePickerAsync`
+  pattern, zone `MudSelect`) places pins by clicking the image — **pure Blazor, no JS interop**: a
+  fixed-size canvas (`width = min(imgW, 760)px`, height from the stored aspect) so a click's
+  `MouseEventArgs.OffsetX/OffsetY` normalizes against a known box, with marker overlays at
+  `pointer-events:none` so clicks always land on the image; C# stays source-of-truth via
+  `PropertyMapEditModel.Place` (clamps to 0..1). This deliberately avoids the collocated-`.razor.js`
+  fragility that triggered the MudBlazor migration. `/map` live operational view inherits
+  `SnapshotComponentBase`, positions pins by percentage (responsive, no size knowledge), highlights
+  green/amber from the per-second snapshot, and taps a pin → `RunZoneTimed(bit, minutes*60)` with one
+  shared duration field (empty-state links to the editor). NavMenu gains `/map` (top) + `config/property-map`
+  (config). **Service worker not bumped** — the uploaded image is dynamic (served by the endpoint), not
+  part of the cached shell. Tests: `PropertyMapEditModelTests` (clamp/place/move/remove/aspect/round-trip),
+  `PropertyMapRepositoryTests` (merge add/update/remove, identity-preserving in-place update,
+  unique-index safety), `PropertyMapImageProcessorTests` (real ImageSharp: 3000×2000 JPEG → 1600×1067,
+  small PNG preserved). **`dotnet build`/`dotnet test` green (112 total, +15).** Browser smoke (Sim driver):
+  both pages render in the dark theme with correct empty states, nav links present, `/property-map/image`
+  404s before upload, clean loads produce no console/server errors. **Could not be headless-verified**
+  (needs a real file picker + real pointer events): the upload→re-encode→serve round-trip and the
+  click-to-place + live-highlight flow — flagged for a manual click-through; the model math, the ImageSharp
+  pipeline, and the repo merge are all unit-tested. **Divergences from this plan (intentional):**
+  (1) marker placement uses a pure-Blazor fixed-size canvas with `OffsetX/OffsetY` normalization rather
+  than the originally-sketched SVG `viewBox`, because the click event's `offsetX` is a CSS pixel (not
+  user-space) value, so a known-size box is the robust JS-free approach; (2) the image uploads over the
+  circuit via `IBrowserFile` — only the *serve* path is a Minimal-API endpoint.
+- **Phase 6 — MCP server:** not started.
 
 ## Reference files to port (from the OpenSprinkler-Firmware C++ repo; read, do not modify)
 

@@ -1,0 +1,200 @@
+@page "/config/property-map"
+@rendermode InteractiveServer
+@inject IPropertyMapRepository Maps
+@inject IPropertyMapImageProcessor ImageProcessor
+@inject IZoneRepository ZoneRepo
+@inject ISnackbar Snackbar
+
+<PageTitle>Property Map</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom="true">Property Map</MudText>
+
+@if (_model is null)
+{
+    <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+}
+else
+{
+    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-3 flex-wrap">
+        <MudFileUpload T="IBrowserFile" FilesChanged="OnFileChanged" Accept=".png,.jpg,.jpeg,.webp" Disabled="_busy">
+            <CustomContent>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy"
+                           OnClick="@context.OpenFilePickerAsync"
+                           StartIcon="@Icons.Material.Filled.Upload">
+                    @(_model.HasImage ? "Replace image" : "Upload image")
+                </MudButton>
+            </CustomContent>
+            <SelectedTemplate />
+        </MudFileUpload>
+        @if (_busy)
+        {
+            <MudProgressCircular Indeterminate="true" Size="Size.Small" />
+        }
+    </MudStack>
+
+    @if (!_model.HasImage)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            Upload a photo or diagram of the property, then pick a zone and click the image to drop its pin.
+        </MudAlert>
+    }
+    else
+    {
+        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-3 flex-wrap" Style="max-width: 760px;">
+            <MudSelect T="int" @bind-Value="_selectedZoneId" Label="Zone" Variant="Variant.Outlined"
+                       Margin="Margin.Dense" Dense="true" Style="max-width: 22rem;">
+                @foreach (var z in _zones)
+                {
+                    <MudSelectItem T="int" Value="@z.Id">
+                        @ZoneLabel(z) @(_model.HasMarker(z.Id) ? "●" : "")
+                    </MudSelectItem>
+                }
+            </MudSelect>
+            <MudButton Variant="Variant.Outlined" Color="Color.Default" Disabled="@(!_model.HasMarker(_selectedZoneId))"
+                       OnClick="RemoveSelected" StartIcon="@Icons.Material.Filled.LocationOff">Remove pin</MudButton>
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy"
+                       OnClick="SaveAsync" StartIcon="@Icons.Material.Filled.Save">Save</MudButton>
+        </MudStack>
+
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+            Click the image to place the selected zone's pin. Pins use normalized coordinates, so they
+            stay put when the map is resized.
+        </MudText>
+
+        <div style="@CanvasStyle" @onclick="OnCanvasClick">
+            <img src="@ImageUrl" alt="Property map"
+                 style="width:100%; height:100%; display:block; object-fit:fill; border-radius:4px;" />
+            @foreach (var m in _model.Markers)
+            {
+                <div style="@PinStyle(m, m.ZoneId == _selectedZoneId)">@BitLabel(m.ZoneId)</div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private PropertyMapEditModel? _model;
+    private IReadOnlyList<Zone> _zones = Array.Empty<Zone>();
+    private Dictionary<int, Zone> _zoneById = new();
+    private int _selectedZoneId;
+    private bool _busy;
+
+    // Fixed editor canvas size (px) so a click's OffsetX/OffsetY normalizes against a known box.
+    private const int MaxEditorWidth = 760;
+    private const long MaxUploadBytes = 10L * 1024 * 1024;
+    private int _editorWidth = MaxEditorWidth;
+    private int _editorHeight = MaxEditorWidth;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _zones = (await ZoneRepo.GetAllAsync()).OrderBy(z => z.HardwareBit).ToList();
+        _zoneById = _zones.ToDictionary(z => z.Id);
+        _selectedZoneId = _zones.FirstOrDefault()?.Id ?? 0;
+
+        _model = PropertyMapEditModel.FromEntity(await Maps.GetAsync());
+        RecomputeCanvas();
+    }
+
+    private string ImageUrl => $"/property-map/image?v={_model!.ImageHash}";
+
+    private string CanvasStyle =>
+        $"position:relative; width:{_editorWidth}px; height:{_editorHeight}px; max-width:100%; cursor:crosshair;";
+
+    private void RecomputeCanvas()
+    {
+        if (_model is null || !_model.HasImage)
+        {
+            return;
+        }
+
+        _editorWidth = Math.Min(_model.ImageWidth, MaxEditorWidth);
+        _editorHeight = (int)Math.Round(_editorWidth / _model.AspectRatio);
+    }
+
+    private async Task OnFileChanged(IBrowserFile? file)
+    {
+        if (file is null || _model is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            // Copy off the circuit into a seekable buffer for ImageSharp.
+            using var buffer = new MemoryStream();
+            await using (var source = file.OpenReadStream(MaxUploadBytes))
+            {
+                await source.CopyToAsync(buffer);
+            }
+            buffer.Position = 0;
+
+            var stored = await ImageProcessor.SaveAsync(buffer);
+            await Maps.UpdateImageAsync(stored.RelativePath, stored.Hash, stored.Width, stored.Height);
+
+            _model.ImagePath = stored.RelativePath;
+            _model.ImageHash = stored.Hash;
+            _model.ImageWidth = stored.Width;
+            _model.ImageHeight = stored.Height;
+            RecomputeCanvas();
+            Snackbar.Add("Image uploaded.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Upload failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void OnCanvasClick(MouseEventArgs e)
+    {
+        if (_model is null || _selectedZoneId == 0 || _editorWidth == 0 || _editorHeight == 0)
+        {
+            return;
+        }
+
+        _model.Place(_selectedZoneId, e.OffsetX / _editorWidth, e.OffsetY / _editorHeight);
+    }
+
+    private void RemoveSelected() => _model?.Remove(_selectedZoneId);
+
+    private async Task SaveAsync()
+    {
+        if (_model is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await Maps.SaveMarkersAsync(_model.ToEntity());
+            Snackbar.Add("Markers saved.", Severity.Success);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private string ZoneLabel(Zone z) =>
+        string.IsNullOrWhiteSpace(z.Name) ? $"Zone {z.HardwareBit + 1}" : $"Zone {z.HardwareBit + 1} — {z.Name}";
+
+    private string BitLabel(int zoneId) =>
+        _zoneById.TryGetValue(zoneId, out var z) ? (z.HardwareBit + 1).ToString() : "?";
+
+    private static string PinStyle(PropertyMapEditModel.MarkerRow m, bool selected)
+    {
+        var color = selected ? "#1976d2" : "#43a047";
+        return $"position:absolute; left:{Pct(m.X)}; top:{Pct(m.Y)}; transform:translate(-50%,-50%); " +
+               "pointer-events:none; min-width:1.6rem; height:1.6rem; padding:0 .3rem; border-radius:.8rem; " +
+               $"background:{color}; color:#fff; font-size:.8rem; font-weight:600; line-height:1.6rem; " +
+               "text-align:center; box-shadow:0 0 0 2px rgba(0,0,0,.35); white-space:nowrap;";
+    }
+
+    private static string Pct(double v) => $"{(v * 100).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}%";
+}

@@ -18,6 +18,8 @@ public sealed class OSPiDbContext : DbContext
     public DbSet<MasterStation> MasterStations => Set<MasterStation>();
     public DbSet<ControllerSettings> ControllerSettings => Set<ControllerSettings>();
     public DbSet<RunLogEntry> RunLog => Set<RunLogEntry>();
+    public DbSet<PropertyMap> PropertyMaps => Set<PropertyMap>();
+    public DbSet<MapMarker> MapMarkers => Set<MapMarker>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
         => modelBuilder.ApplyConfigurationsFromAssembly(typeof(OSPiDbContext).Assembly);

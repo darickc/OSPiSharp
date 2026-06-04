@@ -2,7 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OSPi.Application.Persistence;
+using OSPi.Application.Services;
 using OSPi.Infrastructure.Persistence.Repositories;
+using OSPi.Infrastructure.Services;
 
 namespace OSPi.Infrastructure.Persistence;
 
@@ -20,12 +22,21 @@ public static class PersistenceServiceCollectionExtensions
 
         services.AddDbContextFactory<OSPiDbContext>(o => o.UseSqlite(options.BuildConnectionString()));
 
+        // Writable directory for uploaded property-map images (resolved like the SQLite path).
+        var imageStorage = new ImageStorageOptions();
+        configuration.GetSection(ImageStorageOptions.SectionName).Bind(imageStorage);
+        services.AddSingleton(imageStorage);
+
         services.AddScoped<IZoneRepository, ZoneRepository>();
         services.AddScoped<IProgramRepository, ProgramRepository>();
         services.AddScoped<IMasterStationRepository, MasterStationRepository>();
         services.AddScoped<IControllerSettingsRepository, ControllerSettingsRepository>();
         services.AddScoped<IRunLogRepository, RunLogRepository>();
         services.AddScoped<ISchedulingDataRepository, SchedulingDataRepository>();
+        services.AddScoped<IPropertyMapRepository, PropertyMapRepository>();
+
+        // Stateless ImageSharp re-encoder.
+        services.AddSingleton<IPropertyMapImageProcessor, PropertyMapImageProcessor>();
 
         return services;
     }

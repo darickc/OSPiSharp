@@ -1,4 +1,5 @@
 using MudBlazor.Services;
+using OSPi.Application.Persistence;
 using OSPi.Infrastructure;
 using OSPi.Infrastructure.Persistence;
 using OSPi.Web.Components;
@@ -34,5 +35,30 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+// Serves the uploaded property-map image from writable app-data (it lives outside wwwroot
+// because the Pi's published binary dir may be read-only). Callers cache-bust with ?v={hash}.
+app.MapGet("/property-map/image", async (
+    HttpContext http, IPropertyMapRepository maps, ImageStorageOptions storage, CancellationToken ct) =>
+{
+    var map = await maps.GetAsync(ct);
+    if (string.IsNullOrEmpty(map.ImagePath))
+    {
+        return Results.NotFound();
+    }
+
+    var fullPath = Path.Combine(storage.ResolveDirectory(), map.ImagePath);
+    if (!File.Exists(fullPath))
+    {
+        return Results.NotFound();
+    }
+
+    // The file name is content-hashed and the URL is versioned, so it's safe to cache forever.
+    http.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+    var contentType = map.ImagePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+        ? "image/png"
+        : "image/jpeg";
+    return Results.File(fullPath, contentType);
+});
 
 app.Run();
