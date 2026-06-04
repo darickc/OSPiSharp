@@ -1,3 +1,4 @@
+using MudBlazor.Services;
 using OSPi.Infrastructure;
 using OSPi.Infrastructure.Persistence;
 using OSPi.Web.Components;
@@ -7,6 +8,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+builder.Services.AddMudServices();
 
 // Sprinkler hardware driver, state hub, scheduling engine, and application services.
 builder.Services.AddSprinklerCore(builder.Configuration);

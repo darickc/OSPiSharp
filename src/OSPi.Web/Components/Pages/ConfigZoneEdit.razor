@@ -8,61 +8,45 @@
 
 @if (_notFound)
 {
-    <h1>Zone not found</h1>
-    <a class="btn btn-outline-secondary" href="config/zones">Back to zones</a>
+    <MudText Typo="Typo.h5" GutterBottom="true">Zone not found</MudText>
+    <MudButton Href="config/zones" Variant="Variant.Outlined">Back to zones</MudButton>
 }
 else if (_model is null)
 {
-    <p><em>Loading…</em></p>
+    <MudProgressLinear Indeterminate="true" />
 }
 else
 {
-    <h1>Edit Zone</h1>
+    <MudText Typo="Typo.h5" GutterBottom="true">Edit Zone</MudText>
 
     <EditForm Model="_model" OnValidSubmit="SaveAsync">
         <DataAnnotationsValidator />
 
-        <div class="row g-3" style="max-width: 640px;">
-            <div class="col-md-4">
-                <label class="form-label">Hardware bit</label>
-                <input class="form-control" value="@_model.HardwareBit" disabled />
-                <div class="form-text">Fixed hardware index — not editable.</div>
-            </div>
+        <MudGrid Style="max-width: 640px;">
+            <MudItem xs="12" sm="4">
+                <MudTextField Value="@_model.HardwareBit.ToString()" Label="Hardware bit" ReadOnly="true"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              HelperText="Fixed hardware index — not editable." T="string" />
+            </MudItem>
 
-            <div class="col-md-8">
-                <label class="form-label">Name</label>
-                <InputText class="form-control" @bind-Value="_model.Name" />
-                <ValidationMessage For="() => _model.Name" />
-            </div>
+            <MudItem xs="12" sm="8">
+                <MudTextField @bind-Value="_model.Name" For="@(() => _model.Name)" Label="Name"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
 
-            <div class="col-md-6">
-                <label class="form-label">Group</label>
-                <EnumSelect TEnum="ZoneGroup" @bind-Value="_model.Group" LabelFor="DisplayLabels.ZoneGroup" />
-            </div>
+            <MudItem xs="12" sm="6">
+                <EnumSelect TEnum="ZoneGroup" @bind-Value="_model.Group" Label="Group"
+                            LabelFor="DisplayLabels.ZoneGroup" />
+            </MudItem>
 
-            <div class="col-12">
-                <div class="form-check">
-                    <InputCheckbox class="form-check-input" id="m1" @bind-Value="_model.BoundToMaster1" />
-                    <label class="form-check-label" for="m1">Activates master station 1</label>
-                </div>
-                <div class="form-check">
-                    <InputCheckbox class="form-check-input" id="m2" @bind-Value="_model.BoundToMaster2" />
-                    <label class="form-check-label" for="m2">Activates master station 2</label>
-                </div>
-                <div class="form-check">
-                    <InputCheckbox class="form-check-input" id="disabled" @bind-Value="_model.Disabled" />
-                    <label class="form-check-label" for="disabled">Disabled (never scheduled or run)</label>
-                </div>
-                <div class="form-check">
-                    <InputCheckbox class="form-check-input" id="ignoreRain" @bind-Value="_model.IgnoreRain" />
-                    <label class="form-check-label" for="ignoreRain">Ignore active rain delay</label>
-                </div>
-                <div class="form-check">
-                    <InputCheckbox class="form-check-input" id="ignoreSensor" @bind-Value="_model.IgnoreSensor" />
-                    <label class="form-check-label" for="ignoreSensor">Ignore sensor input</label>
-                </div>
-            </div>
-        </div>
+            <MudItem xs="12">
+                <MudCheckBox @bind-Value="_model.BoundToMaster1" Label="Activates master station 1" Color="Color.Primary" Dense="true" />
+                <MudCheckBox @bind-Value="_model.BoundToMaster2" Label="Activates master station 2" Color="Color.Primary" Dense="true" />
+                <MudCheckBox @bind-Value="_model.Disabled" Label="Disabled (never scheduled or run)" Color="Color.Primary" Dense="true" />
+                <MudCheckBox @bind-Value="_model.IgnoreRain" Label="Ignore active rain delay" Color="Color.Primary" Dense="true" />
+                <MudCheckBox @bind-Value="_model.IgnoreSensor" Label="Ignore sensor input" Color="Color.Primary" Dense="true" />
+            </MudItem>
+        </MudGrid>
 
         <SaveCancelToolbar Busy="_busy" OnCancel="GoBack" />
     </EditForm>

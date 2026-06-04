@@ -1,31 +1,24 @@
 @*
-    Bootstrap confirmation modal. Render it always; toggle with Visible. Confirm/Cancel
-    raise callbacks the parent handles.
+    Confirmation dialog. Render it always; toggle with Visible. Confirm/Cancel raise
+    callbacks the parent handles. Wraps MudDialog (inline, requires MudDialogProvider).
 *@
 
-@if (Visible)
-{
-    <div class="modal fade show" style="display: block;" tabindex="-1" role="dialog">
-        <div class="modal-dialog" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">@Title</h5>
-                    <button type="button" class="btn-close" aria-label="Close" @onclick="OnCancel"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="mb-0">@Message</p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" @onclick="OnCancel">Cancel</button>
-                    <button type="button" class="btn btn-danger" @onclick="OnConfirm">@ConfirmText</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="modal-backdrop fade show"></div>
-}
+<MudDialog Visible="Visible" VisibleChanged="OnVisibleChanged" Options="_options">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@Title</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>@Message</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="OnCancel">Cancel</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" OnClick="OnConfirm">@ConfirmText</MudButton>
+    </DialogActions>
+</MudDialog>
 
 @code {
+    private readonly DialogOptions _options = new() { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true };
+
     [Parameter] public bool Visible { get; set; }
 
     [Parameter] public string Title { get; set; } = "Confirm";
@@ -37,4 +30,9 @@
     [Parameter] public EventCallback OnConfirm { get; set; }
 
     [Parameter] public EventCallback OnCancel { get; set; }
+
+    // The dialog can close itself (backdrop/escape); keep the parent's Visible in sync by
+    // treating any close as a cancel.
+    private Task OnVisibleChanged(bool visible) =>
+        visible ? Task.CompletedTask : OnCancel.InvokeAsync();
 }

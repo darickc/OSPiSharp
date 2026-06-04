@@ -1,12 +1,9 @@
 @*
-    HTML time input bound to a minute-of-day integer (0..1439).
+    Time picker bound to a minute-of-day integer (0..1439). Wraps MudTimePicker.
 *@
 
-<input type="time"
-       class="form-control @CssClass"
-       style="@Style"
-       value="@Format(Value)"
-       @onchange="OnChanged" />
+<MudTimePicker Time="_time" TimeChanged="OnTimeChanged" Margin="Margin.Dense"
+               Variant="Variant.Outlined" Label="@Label" Class="@CssClass" Style="@Style" />
 
 @code {
     [Parameter] public int Value { get; set; }
@@ -17,24 +14,21 @@
 
     [Parameter] public string? Style { get; set; }
 
-    private static string Format(int minuteOfDay)
-    {
-        minuteOfDay = Math.Clamp(minuteOfDay, 0, 1439);
-        return $"{minuteOfDay / 60:D2}:{minuteOfDay % 60:D2}";
-    }
+    [Parameter] public string? Label { get; set; }
 
-    private async Task OnChanged(ChangeEventArgs e)
+    private TimeSpan? _time;
+
+    protected override void OnParametersSet() =>
+        _time = TimeSpan.FromMinutes(Math.Clamp(Value, 0, 1439));
+
+    private async Task OnTimeChanged(TimeSpan? time)
     {
-        var text = e.Value?.ToString();
-        if (!string.IsNullOrWhiteSpace(text) && TimeOnly.TryParse(text, out var time))
+        var minutes = time is { } ts ? (int)ts.TotalMinutes : 0;
+        _time = time;
+        if (minutes != Value)
         {
-            var minutes = (time.Hour * 60) + time.Minute;
             Value = minutes;
             await ValueChanged.InvokeAsync(minutes);
-        }
-        else
-        {
-            await ValueChanged.InvokeAsync(Value);
         }
     }
 }

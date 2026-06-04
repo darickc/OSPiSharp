@@ -1,21 +1,22 @@
 @*
-    Save / Cancel button bar shared by every edit form. The Save button shows a
-    spinner and disables both buttons while Busy is true.
+    Save / Cancel button bar shared by every edit form. The Save button shows a spinner
+    and disables both buttons while Busy is true.
 *@
 
-<div class="d-flex gap-2 mt-4">
-    <button type="submit" class="btn btn-primary" disabled="@Busy">
+<MudStack Row="true" Spacing="2" Class="mt-4" AlignItems="AlignItems.Center">
+    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary"
+               Disabled="Busy">
         @if (Busy)
         {
-            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2" />
         }
         @SaveText
-    </button>
-    <button type="button" class="btn btn-outline-secondary" disabled="@Busy" @onclick="OnCancel">
+    </MudButton>
+    <MudButton Variant="Variant.Outlined" Color="Color.Default" Disabled="Busy" OnClick="OnCancel">
         @CancelText
-    </button>
+    </MudButton>
     @ChildContent
-</div>
+</MudStack>
 
 @code {
     /// <summary>When true, both buttons are disabled and the Save button shows a spinner.</summary>

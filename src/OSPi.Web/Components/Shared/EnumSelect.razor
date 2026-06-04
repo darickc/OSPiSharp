@@ -1,15 +1,17 @@
 @*
-    Generic <select> bound to an enum value. Supports @bind-Value. Labels default to
-    the enum member name; pass LabelFor to supply friendlier text.
+    Generic enum dropdown bound via @bind-Value. Labels default to the enum member name;
+    pass LabelFor for friendlier text. Wraps MudSelect.
 *@
 @typeparam TEnum where TEnum : struct, Enum
 
-<select class="form-select @CssClass" value="@Value.ToString()" @onchange="OnChanged" disabled="@Disabled">
+<MudSelect T="TEnum" Value="Value" ValueChanged="OnChanged" Disabled="Disabled"
+           Label="@Label" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined"
+           Class="@CssClass">
     @foreach (var item in Enum.GetValues<TEnum>())
     {
-        <option value="@item.ToString()" selected="@item.Equals(Value)">@LabelOf(item)</option>
+        <MudSelectItem T="TEnum" Value="item">@LabelOf(item)</MudSelectItem>
     }
-</select>
+</MudSelect>
 
 @code {
     [Parameter] public TEnum Value { get; set; }
@@ -23,14 +25,14 @@
 
     [Parameter] public string? CssClass { get; set; }
 
+    /// <summary>Optional floating label.</summary>
+    [Parameter] public string? Label { get; set; }
+
     private string LabelOf(TEnum value) => LabelFor?.Invoke(value) ?? value.ToString();
 
-    private async Task OnChanged(ChangeEventArgs e)
+    private async Task OnChanged(TEnum parsed)
     {
-        if (Enum.TryParse<TEnum>(e.Value?.ToString(), out var parsed))
-        {
-            Value = parsed;
-            await ValueChanged.InvokeAsync(parsed);
-        }
+        Value = parsed;
+        await ValueChanged.InvokeAsync(parsed);
     }
 }

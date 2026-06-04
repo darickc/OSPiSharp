@@ -1,58 +1,13 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">OSPiSharp</a>
-    </div>
-</div>
+<MudNavMenu>
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
+    <MudNavLink Href="zones" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    <MudNavLink Href="log" Icon="@Icons.Material.Filled.History">History</MudNavLink>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+    <MudDivider Class="my-2" />
+    <MudText Typo="Typo.overline" Class="px-4 mud-text-secondary">Configuration</MudText>
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="nav flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="zones">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Dashboard
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="log">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> History
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3 mt-3">
-            <span class="nav-section-label">Configuration</span>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="config/zones">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Zones
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="config/programs">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Programs
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="config/masters">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Master Stations
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="config/settings">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Settings
-            </NavLink>
-        </div>
-    </nav>
-</div>
-
+    <MudNavLink Href="config/zones" Icon="@Icons.Material.Filled.Grass">Zones</MudNavLink>
+    <MudNavLink Href="config/programs" Icon="@Icons.Material.Filled.Schedule">Programs</MudNavLink>
+    <MudNavLink Href="config/masters" Icon="@Icons.Material.Filled.Hub">Master Stations</MudNavLink>
+    <MudNavLink Href="config/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
+</MudNavMenu>

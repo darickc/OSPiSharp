@@ -4,43 +4,37 @@
 
 <PageTitle>History</PageTitle>
 
-<div class="d-flex justify-content-between align-items-center">
-    <h1>History</h1>
-    <button class="btn btn-sm btn-outline-secondary" @onclick="LoadAsync">Refresh</button>
-</div>
-<p class="text-muted">Recent completed zone runs (most recent first).</p>
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-1">
+    <MudText Typo="Typo.h5">History</MudText>
+    <MudButton Variant="Variant.Outlined" Size="Size.Small"
+               StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync">Refresh</MudButton>
+</MudStack>
+<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">Recent completed zone runs (most recent first).</MudText>
 
 @if (_entries is null)
 {
-    <p><em>Loading…</em></p>
+    <MudProgressLinear Indeterminate="true" />
 }
 else if (_entries.Count == 0)
 {
-    <div class="alert alert-light border" role="alert">No runs recorded yet.</div>
+    <MudAlert Severity="Severity.Normal">No runs recorded yet.</MudAlert>
 }
 else
 {
-    <table class="table table-hover align-middle">
-        <thead>
-            <tr>
-                <th>Zone</th>
-                <th>Program</th>
-                <th>Started</th>
-                <th class="text-end">Duration</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var e in _entries)
-            {
-                <tr>
-                    <td>@ZoneName(e)</td>
-                    <td>@ProgramName(e)</td>
-                    <td>@e.StartTime.ToLocalTime().ToString("g")</td>
-                    <td class="text-end">@Fmt(e.DurationSeconds)</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    <MudTable Items="_entries" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm">
+        <HeaderContent>
+            <MudTh>Zone</MudTh>
+            <MudTh>Program</MudTh>
+            <MudTh>Started</MudTh>
+            <MudTh Style="text-align:right">Duration</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Zone">@ZoneName(context)</MudTd>
+            <MudTd DataLabel="Program">@ProgramName(context)</MudTd>
+            <MudTd DataLabel="Started">@context.StartTime.ToLocalTime().ToString("g")</MudTd>
+            <MudTd DataLabel="Duration" Style="text-align:right">@Fmt(context.DurationSeconds)</MudTd>
+        </RowTemplate>
+    </MudTable>
 }
 
 @code {

@@ -134,7 +134,54 @@ matching the old firmware's scheduling behavior provably.
   *is* SignalR, so the dashboard consumes `IStateHub` directly; the planned `IHubContext<SprinklerHub>`
   broadcaster was unnecessary. (2) **`SixLabors.ImageSharp` deferred to Phase 5** — PWA icons are
   committed static assets, so the dependency lands with the property-map image re-encode instead.
-- **Phases 4–6:** not started.
+- **Phase 4 — Custom run order + bulk edit: ✅ complete.** (landed 2026-06-04) Discovery: `RunOrder`
+  was already wired end-to-end from prior phases — persisted by `ProgramRepository.SyncZoneDurations`
+  (merge-by-`ZoneId`), loaded ordered by it, and enqueued by it (`SprinklerEngine.BuildPendingZones`
+  does `OrderBy(z => z.RunOrder)`, consumed by `StationScheduler.Plan`). So **no data-layer or engine
+  change was needed**; the phase was UI-only in `OSPi.Web`. The Program editor's zone table replaced
+  the manual "Run order" `<InputNumber>` column with **drag-and-drop reordering** via **SortableJS
+  (vendored ESM at `wwwroot/lib/sortable/sortable.esm.js`, MIT) + a thin collocated
+  `ProgramEdit.razor.js` interop module** — matching the existing `ReconnectModal.razor.js` pattern, no
+  NuGet dependency, touch-capable for the PWA. C# stays source-of-truth: the module's `onEnd` reverts
+  Sortable's DOM move and calls `[JSInvokable] OnReorder` → `ProgramEditModel.MoveZone` → re-render,
+  with `@key` on rows so Blazor reconciles. (Interop gotcha fixed during bring-up: dynamic `import()`
+  needs a `./`-prefixed specifier, not the bare fingerprinted `Assets[...]` path.) Added **multi-select
+  bulk duration edit**: per-row + header select-all checkboxes and a bulk bar that applies one duration
+  to selected rows (`ApplyDurationToSelected`). `RunOrder` now saves as the list position unconditionally
+  (`ToEntity` index; dropped the old `RunOrder == 0 ? index : RunOrder` special-case). Tests: a dedicated
+  **`OSPi.Web.Tests`** project (separate from `OSPi.Tests` to avoid the ASP.NET Core SDK's public global
+  `Program` class shadowing `OSPi.Domain.Entities.Program` in the scheduling tests) with 8 view-model
+  cases (reorder→sequential RunOrder, bulk-apply touches only selected, the dragged-to-index-0 regression,
+  FromEntity→Move→ToEntity round-trip + `Validate`). **`dotnet test` green (97 total, +8).** Browser smoke
+  (Sim driver): added a 3rd zone, multi-selected + bulk-set 7:30 (unselected row unchanged), exercised the
+  real `onEnd → OnReorder` wire to reorder, saved, and reopened to confirm order + durations persisted as
+  sequential `RunOrder`; no console/server errors; clean disposal on navigation. `AlternateReverse` was
+  **dropped** (closes open item #2) since run order is now explicit and drag-editable.
+- **UI framework migration — Bootstrap → MudBlazor: ✅ complete.** (landed 2026-06-04) The Phase-4
+  SortableJS interop proved fragile under `dotnet watch` hot reload (a new collocated `.razor.js` +
+  an `OnAfterRenderAsync` JS-interop call could crash the circuit, which kills *all* page
+  interactivity). The whole web app was migrated to **MudBlazor 9.5.0** (targets `net10.0` directly)
+  in a **full dark theme** (`OSPi.Web/Theme/OspiTheme.cs`, navy `#1b1b2f` app bar/drawer matching the
+  PWA `theme-color`). `AddMudServices()`, the four providers (Theme/Popover/Snackbar/Dialog) in
+  `MainLayout`, `MudLayout`/`MudAppBar`/`MudDrawer`/`MudNavMenu`, and `_content/MudBlazor` CSS/JS in
+  `App.razor`; Bootstrap (`wwwroot/lib/bootstrap`) and the SortableJS lib + `ProgramEdit.razor.js`
+  were **deleted**, `app.css` trimmed, and the service worker bumped to `v2` (precaches
+  `MudBlazor.min.css`). Shared components were rewritten to wrap Mud while keeping their public APIs
+  (`EnumSelect`→`MudSelect`, `DurationInput`→`MudTextField` mm:ss, `TimeOfDayInput`→`MudTimePicker`,
+  `WeekdayPicker`→`MudCheckBox`es, `SaveCancelToolbar`→`MudButton`s, `ConfirmDeleteModal`→`MudDialog`);
+  `SnapshotComponentBase`/`IStateHub` real-time plumbing is **unchanged**. Forms keep `EditForm` +
+  `DataAnnotationsValidator` with Mud inputs bound via `For`. **Zone drag-reorder now uses
+  `MudDropContainer`/`MudDropZone`** (`AllowReorder`), whose `ItemDropped` routes through the same
+  unit-tested `ProgramEditModel.MoveZone` — no custom JS. `ProgramEditModel` and its 8 tests are
+  unchanged; **`dotnet test` green (97 total)**. Browser smoke (Sim driver, clean build): dark theme
+  boots; every page renders; in the Program editor select-all, multi-select bulk-apply, single
+  duration edit, remove, and Save→reopen-persist all work on the live circuit; the dashboard timed-run
+  drives a zone ON with a live `mm:ss` countdown (snapshot push intact), the run lands on `/log`, and
+  Stop-All clears it; SW registers at scope `/` and `_content/MudBlazor` assets load; no console/server
+  errors. (Drag-reorder and the add-zone `MudSelect` popover could not be script-driven in the headless
+  preview — both depend on real browser drag/pointer events the harness can't synthesize — so they need
+  a quick manual click-through; the reorder logic itself is unit-tested.)
+- **Phases 5–6:** not started.
 
 ## Reference files to port (from the OpenSprinkler-Firmware C++ repo; read, do not modify)
 
@@ -255,7 +302,8 @@ by keeping the scheduler as pure functions gated behind the test harness before 
 `SixLabors.ImageSharp` · Blazor Server + built-in SignalR (.NET 10 web SDK) · web manifest +
 service worker for PWA install (no extra package needed) · `System.Threading.Channels` ·
 `NodaTime` (recommended for DST-correct time + sunrise/sunset math) ·
-a Blazor SortableJS wrapper for drag-and-drop · `xUnit` + `FluentAssertions` for tests.
+`MudBlazor` 9.5.0 for the component library, dark theme, and `MudDropContainer` drag-and-drop
+(replaced Bootstrap + the earlier SortableJS approach) · `xUnit` + `FluentAssertions` for tests.
 
 ## Verification
 
@@ -278,6 +326,7 @@ a Blazor SortableJS wrapper for drag-and-drop · `xUnit` + `FluentAssertions` fo
 ## Open items to decide later (non-blocking)
 
 1. MCP in-process (recommended) vs. separate process — only matters at Phase 6.
-2. Keep `AlternateReverse` ("flip order each run") or drop it now that order is explicit.
+2. ~~Keep `AlternateReverse` ("flip order each run") or drop it now that order is explicit.~~
+   **Resolved (Phase 4): dropped** — run order is now first-class and drag-editable.
 3. Installable PWA on Blazor Server is not offline-capable; revisit Blazor WASM/Auto render
    modes only if true offline UI becomes a requirement.

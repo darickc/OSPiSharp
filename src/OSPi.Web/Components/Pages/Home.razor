@@ -1,7 +1,11 @@
-﻿@page "/"
+@page "/"
 
 <PageTitle>Home</PageTitle>
 
-<h1>Hello, world!</h1>
+<MudText Typo="Typo.h4" GutterBottom="true">OSPiSharp</MudText>
+<MudText Class="mb-4">Raspberry Pi sprinkler controller.</MudText>
 
-Welcome to your new app.
+<MudButton Href="zones" Variant="Variant.Filled" Color="Color.Primary"
+           StartIcon="@Icons.Material.Filled.Dashboard">
+    Open dashboard
+</MudButton>

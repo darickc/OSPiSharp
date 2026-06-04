@@ -6,13 +6,13 @@
 // install/launch experience is fast; it must never cache or intercept the circuit, the
 // framework files, or non-GET requests, or the real-time connection breaks.
 
-const CACHE = 'ospisharp-shell-v1';
+const CACHE = 'ospisharp-shell-v2';
 
 const SHELL = [
   '/',
   '/app.css',
   '/OSPi.Web.styles.css',
-  '/lib/bootstrap/dist/css/bootstrap.min.css',
+  '/_content/MudBlazor/MudBlazor.min.css',
   '/manifest.webmanifest',
   '/favicon.png',
   '/icon-192.png',

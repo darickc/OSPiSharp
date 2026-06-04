@@ -5,86 +5,73 @@
 
 <PageTitle>Settings</PageTitle>
 
-<h1>Controller Settings</h1>
-<p class="text-muted">Global, runtime-editable options. Hardware pin configuration lives in appsettings, not here.</p>
+<MudText Typo="Typo.h5" GutterBottom="true">Controller Settings</MudText>
+<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">Global, runtime-editable options. Hardware pin configuration lives in appsettings, not here.</MudText>
 
 @if (_model is null)
 {
-    <p><em>Loading…</em></p>
+    <MudProgressLinear Indeterminate="true" />
 }
 else
 {
     <EditForm Model="_model" OnValidSubmit="SaveAsync">
         <DataAnnotationsValidator />
 
-        <div class="row g-3" style="max-width: 720px;">
-            <div class="col-md-6">
-                <label class="form-label">Water level (%)</label>
-                <InputNumber class="form-control" @bind-Value="_model.WaterLevelPercent" />
-                <ValidationMessage For="() => _model.WaterLevelPercent" />
-                <div class="form-text">Global scaling applied to every program duration.</div>
-            </div>
+        <MudGrid Style="max-width: 720px;">
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_model.WaterLevelPercent" For="@(() => _model.WaterLevelPercent)"
+                                 Label="Water level (%)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 HelperText="Global scaling applied to every program duration." />
+            </MudItem>
 
-            <div class="col-md-6">
-                <label class="form-label">Station delay (seconds)</label>
-                <InputNumber class="form-control" @bind-Value="_model.StationDelaySeconds" />
-                <ValidationMessage For="() => _model.StationDelaySeconds" />
-                <div class="form-text">Delay inserted between sequential stations.</div>
-            </div>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_model.StationDelaySeconds" For="@(() => _model.StationDelaySeconds)"
+                                 Label="Station delay (seconds)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 HelperText="Delay inserted between sequential stations." />
+            </MudItem>
 
-            <div class="col-md-6">
-                <label class="form-label">UTC offset (minutes)</label>
-                <InputNumber class="form-control" @bind-Value="_model.UtcOffsetMinutes" />
-                <ValidationMessage For="() => _model.UtcOffsetMinutes" />
-                <div class="form-text">Fixed site offset from UTC, no DST (e.g. -420 = Mountain Standard). Drives schedule timing and sunrise/sunset.</div>
-            </div>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_model.UtcOffsetMinutes" For="@(() => _model.UtcOffsetMinutes)"
+                                 Label="UTC offset (minutes)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 HelperText="Fixed site offset from UTC, no DST (e.g. -420 = Mountain Standard). Drives schedule timing and sunrise/sunset." />
+            </MudItem>
 
-            <div class="col-12">
-                <div class="form-check">
-                    <InputCheckbox class="form-check-input" id="useWeather" @bind-Value="_model.UseWeather" />
-                    <label class="form-check-label" for="useWeather">Use weather-based adjustment</label>
-                </div>
-                <div class="form-check">
-                    <InputCheckbox class="form-check-input" id="sequentialDefault" @bind-Value="_model.SequentialDefault" />
-                    <label class="form-check-label" for="sequentialDefault">Sequential by default for new zones</label>
-                </div>
-            </div>
+            <MudItem xs="12">
+                <MudCheckBox @bind-Value="_model.UseWeather" Label="Use weather-based adjustment" Color="Color.Primary" Dense="true" />
+                <MudCheckBox @bind-Value="_model.SequentialDefault" Label="Sequential by default for new zones" Color="Color.Primary" Dense="true" />
+            </MudItem>
 
-            <div class="col-12">
-                <div class="form-check">
-                    <InputCheckbox class="form-check-input" id="rainDelay" @bind-Value="_model.RainDelayActive" />
-                    <label class="form-check-label" for="rainDelay">Rain delay active</label>
-                </div>
+            <MudItem xs="12">
+                <MudCheckBox @bind-Value="_model.RainDelayActive" Label="Rain delay active" Color="Color.Primary" Dense="true" />
                 @if (_model.RainDelayActive)
                 {
-                    <div class="mt-2" style="max-width: 320px;">
-                        <label class="form-label">Suppress scheduling until</label>
-                        <InputDate Type="InputDateType.DateTimeLocal" class="form-control" @bind-Value="_model.RainDelayUntilLocal" />
-                        <ValidationMessage For="() => _model.RainDelayUntilLocal" />
-                    </div>
+                    <MudStack Row="true" Spacing="2" Class="mt-2" Style="max-width: 460px;">
+                        <MudDatePicker @bind-Date="RainDate" Label="Suppress until (date)"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        <MudTimePicker @bind-Time="RainTime" Label="Time"
+                                       Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudStack>
                 }
-            </div>
+            </MudItem>
 
-            <div class="col-md-6">
-                <label class="form-label">Latitude</label>
-                <InputNumber class="form-control" @bind-Value="_model.LocationLatitude" />
-                <ValidationMessage For="() => _model.LocationLatitude" />
-                <div class="form-text">For sunrise/sunset start times (Phase 2). Leave blank if unset.</div>
-            </div>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_model.LocationLatitude" For="@(() => _model.LocationLatitude)"
+                                 Label="Latitude" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 HelperText="For sunrise/sunset start times. Leave blank if unset." />
+            </MudItem>
 
-            <div class="col-md-6">
-                <label class="form-label">Longitude</label>
-                <InputNumber class="form-control" @bind-Value="_model.LocationLongitude" />
-                <ValidationMessage For="() => _model.LocationLongitude" />
-            </div>
-        </div>
+            <MudItem xs="12" sm="6">
+                <MudNumericField @bind-Value="_model.LocationLongitude" For="@(() => _model.LocationLongitude)"
+                                 Label="Longitude" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+        </MudGrid>
 
         <SaveCancelToolbar Busy="_busy" OnCancel="ReloadAsync" CancelText="Reset" />
     </EditForm>
 
     @if (_saved)
     {
-        <div class="alert alert-success mt-3 py-2" role="alert">Settings saved.</div>
+        <MudAlert Severity="Severity.Success" Class="mt-3" Dense="true">Settings saved.</MudAlert>
     }
 }
 
@@ -92,6 +79,29 @@ else
     private SettingsModel? _model;
     private bool _busy;
     private bool _saved;
+
+    // MudBlazor has no combined datetime picker, so split RainDelayUntilLocal into a date + time.
+    private DateTime? RainDate
+    {
+        get => _model?.RainDelayUntilLocal?.Date;
+        set
+        {
+            if (_model is null) return;
+            var time = _model.RainDelayUntilLocal?.TimeOfDay ?? TimeSpan.Zero;
+            _model.RainDelayUntilLocal = value is { } d ? d.Date + time : null;
+        }
+    }
+
+    private TimeSpan? RainTime
+    {
+        get => _model?.RainDelayUntilLocal?.TimeOfDay;
+        set
+        {
+            if (_model is null) return;
+            var date = _model.RainDelayUntilLocal?.Date ?? DateTime.Today;
+            _model.RainDelayUntilLocal = date + (value ?? TimeSpan.Zero);
+        }
+    }
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 

@@ -60,6 +60,34 @@ public sealed class ProgramEditModel : IValidatableObject
 
     public List<ZoneDurationRow> ZoneDurations { get; set; } = new();
 
+    /// <summary>
+    /// Moves a zone row from one position to another (the drag-and-drop reorder primitive).
+    /// The list's visual order becomes the run order; <see cref="ToEntity"/> renumbers
+    /// <see cref="ZoneDurationRow.RunOrder"/> from the resulting list position.
+    /// </summary>
+    public void MoveZone(int oldIndex, int newIndex)
+    {
+        if (oldIndex == newIndex
+            || oldIndex < 0 || oldIndex >= ZoneDurations.Count
+            || newIndex < 0 || newIndex >= ZoneDurations.Count)
+        {
+            return;
+        }
+
+        var row = ZoneDurations[oldIndex];
+        ZoneDurations.RemoveAt(oldIndex);
+        ZoneDurations.Insert(newIndex, row);
+    }
+
+    /// <summary>Sets the same duration on every currently-selected zone row (bulk edit).</summary>
+    public void ApplyDurationToSelected(int durationSeconds)
+    {
+        foreach (var row in ZoneDurations.Where(r => r.Selected))
+        {
+            row.DurationSeconds = durationSeconds;
+        }
+    }
+
     public static ProgramEditModel NewProgram() => new()
     {
         StartTimes = { new StartTimeRow { Kind = StartTimeKind.FixedMinute, MinuteOfDay = 6 * 60 } },
@@ -247,6 +275,9 @@ public sealed class ProgramEditModel : IValidatableObject
 
         public int RunOrder { get; set; }
 
+        /// <summary>Transient multi-select state for the bulk-edit UI. Not persisted.</summary>
+        public bool Selected { get; set; }
+
         public static ZoneDurationRow FromEntity(ProgramZoneDuration d) => new()
         {
             ZoneId = d.ZoneId,
@@ -255,11 +286,13 @@ public sealed class ProgramEditModel : IValidatableObject
         };
 
         // Id left at 0 — ProgramRepository.UpdateAsync merges by ZoneId, not Id.
+        // RunOrder is the list position: drag-and-drop maintains the list in visual order,
+        // so the index passed by ProgramEditModel.ToEntity is the authoritative run order.
         public ProgramZoneDuration ToEntity(int index) => new()
         {
             ZoneId = ZoneId,
             DurationSeconds = DurationSeconds,
-            RunOrder = RunOrder == 0 ? index : RunOrder,
+            RunOrder = index,
         };
     }
 }

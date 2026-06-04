@@ -6,61 +6,51 @@
 
 <PageTitle>Master Stations</PageTitle>
 
-<h1>Master Stations</h1>
-<p class="text-muted">Two master (pump/valve) stations that activate while bound zones run. Lead/lag adjustments are signed seconds.</p>
+<MudText Typo="Typo.h5" GutterBottom="true">Master Stations</MudText>
+<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">Two master (pump/valve) stations that activate while bound zones run. Lead/lag adjustments are signed seconds.</MudText>
 
 @if (_models is null || _zones is null)
 {
-    <p><em>Loading…</em></p>
+    <MudProgressLinear Indeterminate="true" />
 }
 else
 {
-    <div class="row g-3">
+    <MudGrid>
         @foreach (var model in _models)
         {
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header">Master @model.MasterIndex</div>
-                    <div class="card-body">
-                        <EditForm Model="model" OnValidSubmit="() => SaveAsync(model)">
-                            <DataAnnotationsValidator />
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudText Typo="Typo.h6" GutterBottom="true">Master @model.MasterIndex</MudText>
+                    <EditForm Model="model" OnValidSubmit="() => SaveAsync(model)">
+                        <DataAnnotationsValidator />
 
-                            <div class="mb-3">
-                                <label class="form-label">Driven by zone</label>
-                                <InputSelect class="form-select" @bind-Value="model.ZoneId">
-                                    <option value="">(unconfigured)</option>
-                                    @foreach (var zone in _zones)
-                                    {
-                                        <option value="@zone.Id">@ZoneLabel(zone)</option>
-                                    }
-                                </InputSelect>
-                            </div>
-
-                            <div class="row g-2">
-                                <div class="col-6">
-                                    <label class="form-label">On adjust (s)</label>
-                                    <InputNumber class="form-control" @bind-Value="model.OnAdjustSeconds" />
-                                    <ValidationMessage For="() => model.OnAdjustSeconds" />
-                                </div>
-                                <div class="col-6">
-                                    <label class="form-label">Off adjust (s)</label>
-                                    <InputNumber class="form-control" @bind-Value="model.OffAdjustSeconds" />
-                                    <ValidationMessage For="() => model.OffAdjustSeconds" />
-                                </div>
-                            </div>
-
-                            <SaveCancelToolbar Busy="model.Busy" OnCancel="ReloadAsync" CancelText="Reset" />
-
-                            @if (model.Saved)
+                        <MudSelect T="int?" @bind-Value="model.ZoneId" Label="Driven by zone"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                            <MudSelectItem T="int?" Value="@((int?)null)">(unconfigured)</MudSelectItem>
+                            @foreach (var zone in _zones)
                             {
-                                <div class="alert alert-success mt-3 py-2 mb-0" role="alert">Saved.</div>
+                                <MudSelectItem T="int?" Value="@((int?)zone.Id)">@ZoneLabel(zone)</MudSelectItem>
                             }
-                        </EditForm>
-                    </div>
-                </div>
-            </div>
+                        </MudSelect>
+
+                        <MudStack Row="true" Spacing="2" Class="mt-3">
+                            <MudNumericField @bind-Value="model.OnAdjustSeconds" For="@(() => model.OnAdjustSeconds)"
+                                             Label="On adjust (s)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudNumericField @bind-Value="model.OffAdjustSeconds" For="@(() => model.OffAdjustSeconds)"
+                                             Label="Off adjust (s)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudStack>
+
+                        <SaveCancelToolbar Busy="model.Busy" OnCancel="ReloadAsync" CancelText="Reset" />
+
+                        @if (model.Saved)
+                        {
+                            <MudAlert Severity="Severity.Success" Class="mt-3" Dense="true">Saved.</MudAlert>
+                        }
+                    </EditForm>
+                </MudPaper>
+            </MudItem>
         }
-    </div>
+    </MudGrid>
 }
 
 @code {

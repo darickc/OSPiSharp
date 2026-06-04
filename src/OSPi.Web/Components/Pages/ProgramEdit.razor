@@ -9,220 +9,217 @@
 
 @if (_notFound)
 {
-    <h1>Program not found</h1>
-    <a class="btn btn-outline-secondary" href="config/programs">Back to programs</a>
+    <MudText Typo="Typo.h5" GutterBottom="true">Program not found</MudText>
+    <MudButton Href="config/programs" Variant="Variant.Outlined">Back to programs</MudButton>
 }
 else if (_model is null || _zones is null)
 {
-    <p><em>Loading…</em></p>
+    <MudProgressLinear Indeterminate="true" />
 }
 else
 {
-    <h1>@(Id is null ? "New Program" : "Edit Program")</h1>
+    <MudText Typo="Typo.h5" GutterBottom="true">@(Id is null ? "New Program" : "Edit Program")</MudText>
 
     <EditForm Model="_model" OnValidSubmit="SaveAsync">
         <DataAnnotationsValidator />
-        <ValidationSummary />
 
-        <div style="max-width: 760px;">
+        <div style="max-width: 820px;">
             @* ---- Basics ---- *@
-            <div class="row g-3">
-                <div class="col-md-8">
-                    <label class="form-label">Name</label>
-                    <InputText class="form-control" @bind-Value="_model.Name" />
-                    <ValidationMessage For="() => _model.Name" />
-                </div>
-                <div class="col-md-4 d-flex align-items-end">
-                    <div>
-                        <div class="form-check">
-                            <InputCheckbox class="form-check-input" id="enabled" @bind-Value="_model.Enabled" />
-                            <label class="form-check-label" for="enabled">Enabled</label>
-                        </div>
-                        <div class="form-check">
-                            <InputCheckbox class="form-check-input" id="useWeather" @bind-Value="_model.UseWeather" />
-                            <label class="form-check-label" for="useWeather">Use weather</label>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <MudGrid>
+                <MudItem xs="12" sm="8">
+                    <MudTextField @bind-Value="_model.Name" For="@(() => _model.Name)" Label="Name"
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudCheckBox @bind-Value="_model.Enabled" Label="Enabled" Color="Color.Primary" Dense="true" />
+                    <MudCheckBox @bind-Value="_model.UseWeather" Label="Use weather" Color="Color.Primary" Dense="true" />
+                </MudItem>
+            </MudGrid>
 
             @* ---- Schedule ---- *@
-            <h2 class="h5 mt-4">Schedule</h2>
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label">Type</label>
-                    <EnumSelect TEnum="ScheduleType" @bind-Value="_model.ScheduleType" LabelFor="DisplayLabels.ScheduleType" />
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Odd/even days</label>
-                    <EnumSelect TEnum="OddEvenRestriction" @bind-Value="_model.OddEven" LabelFor="DisplayLabels.OddEven" />
-                </div>
-            </div>
+            <MudText Typo="Typo.h6" Class="mt-6">Schedule</MudText>
+            <MudGrid>
+                <MudItem xs="12" sm="4">
+                    <EnumSelect TEnum="ScheduleType" @bind-Value="_model.ScheduleType" Label="Type"
+                                LabelFor="DisplayLabels.ScheduleType" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <EnumSelect TEnum="OddEvenRestriction" @bind-Value="_model.OddEven" Label="Odd/even days"
+                                LabelFor="DisplayLabels.OddEven" />
+                </MudItem>
+            </MudGrid>
 
             @switch (_model.ScheduleType)
             {
                 case ScheduleType.Weekly:
                     <div class="mt-3">
-                        <label class="form-label">Run on</label>
+                        <MudText Typo="Typo.body2" Class="mb-1">Run on</MudText>
                         <WeekdayPicker @bind-Value="_model.WeekdayMask" />
-                        <ValidationMessage For="() => _model.WeekdayMask" />
+                        <MudText Color="Color.Error" Typo="Typo.caption"><ValidationMessage For="() => _model.WeekdayMask" /></MudText>
                     </div>
                     break;
 
                 case ScheduleType.Interval:
-                    <div class="row g-3 mt-0">
-                        <div class="col-md-4">
-                            <label class="form-label">Every N days</label>
-                            <InputNumber class="form-control" @bind-Value="_model.IntervalDays" />
-                            <ValidationMessage For="() => _model.IntervalDays" />
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Remainder</label>
-                            <InputNumber class="form-control" @bind-Value="_model.IntervalRemainder" />
-                            <ValidationMessage For="() => _model.IntervalRemainder" />
-                            <div class="form-text">Runs when epoch-day % N == remainder.</div>
-                        </div>
-                    </div>
+                    <MudGrid Class="mt-0">
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField @bind-Value="_model.IntervalDays" For="@(() => _model.IntervalDays)"
+                                             Label="Every N days" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField @bind-Value="_model.IntervalRemainder" For="@(() => _model.IntervalRemainder)"
+                                             Label="Remainder" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                             HelperText="Runs when epoch-day % N == remainder." />
+                        </MudItem>
+                    </MudGrid>
                     break;
 
                 case ScheduleType.Monthly:
-                    <div class="row g-3 mt-0">
-                        <div class="col-md-4">
-                            <label class="form-label">Day of month</label>
-                            <InputNumber class="form-control" @bind-Value="_model.MonthlyDay" disabled="@_model.MonthlyLastDay" />
-                            <ValidationMessage For="() => _model.MonthlyDay" />
-                        </div>
-                        <div class="col-md-4 d-flex align-items-end">
-                            <div class="form-check mb-2">
-                                <InputCheckbox class="form-check-input" id="lastDay" @bind-Value="_model.MonthlyLastDay" />
-                                <label class="form-check-label" for="lastDay">Last day of month</label>
-                            </div>
-                        </div>
-                    </div>
+                    <MudGrid Class="mt-0" Style="align-items: center;">
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField @bind-Value="_model.MonthlyDay" For="@(() => _model.MonthlyDay)"
+                                             Label="Day of month" Disabled="@_model.MonthlyLastDay"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudCheckBox @bind-Value="_model.MonthlyLastDay" Label="Last day of month" Color="Color.Primary" Dense="true" />
+                        </MudItem>
+                    </MudGrid>
                     break;
 
                 case ScheduleType.SingleRun:
-                    <div class="row g-3 mt-0">
-                        <div class="col-md-4">
-                            <label class="form-label">Run date</label>
-                            <InputDate class="form-control" @bind-Value="_model.SingleRunDate" />
-                            <ValidationMessage For="() => _model.SingleRunDate" />
-                        </div>
-                    </div>
+                    <MudGrid Class="mt-0">
+                        <MudItem xs="12" sm="4">
+                            <MudDatePicker @bind-Date="SingleRunDateTime" Label="Run date"
+                                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudText Color="Color.Error" Typo="Typo.caption"><ValidationMessage For="() => _model.SingleRunDate" /></MudText>
+                        </MudItem>
+                    </MudGrid>
                     break;
             }
 
             @* ---- Date-range gate ---- *@
-            <div class="form-check mt-3">
-                <InputCheckbox class="form-check-input" id="dateRange" @bind-Value="_model.DateRangeEnabled" />
-                <label class="form-check-label" for="dateRange">Only run within a date range</label>
-            </div>
+            <MudCheckBox @bind-Value="_model.DateRangeEnabled" Label="Only run within a date range"
+                         Color="Color.Primary" Dense="true" Class="mt-3" />
             @if (_model.DateRangeEnabled)
             {
-                <div class="row g-3 mt-0">
-                    <div class="col-md-3">
-                        <label class="form-label">Start month</label>
-                        <InputNumber class="form-control" @bind-Value="_model.DateRangeStartMonth" />
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Start day</label>
-                        <InputNumber class="form-control" @bind-Value="_model.DateRangeStartDay" />
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">End month</label>
-                        <InputNumber class="form-control" @bind-Value="_model.DateRangeEndMonth" />
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">End day</label>
-                        <InputNumber class="form-control" @bind-Value="_model.DateRangeEndDay" />
-                    </div>
-                </div>
+                <MudGrid>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField @bind-Value="_model.DateRangeStartMonth" Label="Start month"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField @bind-Value="_model.DateRangeStartDay" Label="Start day"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField @bind-Value="_model.DateRangeEndMonth" Label="End month"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudNumericField @bind-Value="_model.DateRangeEndDay" Label="End day"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                </MudGrid>
             }
 
             @* ---- Start times ---- *@
-            <h2 class="h5 mt-4">Start times</h2>
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label">Mode</label>
-                    <EnumSelect TEnum="StartTimeType" @bind-Value="_model.StartTimeType" />
-                </div>
-            </div>
+            <MudText Typo="Typo.h6" Class="mt-6">Start times</MudText>
+            <MudGrid>
+                <MudItem xs="12" sm="4">
+                    <EnumSelect TEnum="StartTimeType" @bind-Value="_model.StartTimeType" Label="Mode" />
+                </MudItem>
+            </MudGrid>
 
             @if (_model.StartTimeType == StartTimeType.Repeating)
             {
-                <div class="mt-3">
+                <div class="mt-2">
                     @if (_model.StartTimes.Count > 0)
                     {
-                        @StartTimeRowEditor(_model.StartTimes[0], 0, allowRemove: false)
+                        @StartTimeRowEditor(_model.StartTimes[0], allowRemove: false)
                     }
-                    <div class="row g-3 mt-0">
-                        <div class="col-md-4">
-                            <label class="form-label">Repeat count</label>
-                            <InputNumber class="form-control" @bind-Value="_model.RepeatCount" />
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Every (minutes)</label>
-                            <InputNumber class="form-control" @bind-Value="_model.RepeatEveryMinutes" />
-                            <ValidationMessage For="() => _model.RepeatEveryMinutes" />
-                        </div>
-                    </div>
+                    <MudGrid>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField @bind-Value="_model.RepeatCount" Label="Repeat count"
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField @bind-Value="_model.RepeatEveryMinutes" For="@(() => _model.RepeatEveryMinutes)"
+                                             Label="Every (minutes)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                    </MudGrid>
                 </div>
             }
             else
             {
                 <div class="mt-2">
-                    @for (var i = 0; i < _model.StartTimes.Count; i++)
+                    @foreach (var row in _model.StartTimes)
                     {
-                        @StartTimeRowEditor(_model.StartTimes[i], i, allowRemove: true)
+                        @StartTimeRowEditor(row, allowRemove: true)
                     }
-                    <button type="button" class="btn btn-sm btn-outline-secondary mt-2"
-                            disabled="@(_model.StartTimes.Count >= ProgramEditModel.MaxStartTimes)"
-                            @onclick="AddStartTime">
-                        + Add start time
-                    </button>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Class="mt-2"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               Disabled="@(_model.StartTimes.Count >= ProgramEditModel.MaxStartTimes)"
+                               OnClick="AddStartTime">
+                        Add start time
+                    </MudButton>
                 </div>
             }
-            <ValidationMessage For="() => _model.StartTimes" />
+            <MudText Color="Color.Error" Typo="Typo.caption"><ValidationMessage For="() => _model.StartTimes" /></MudText>
 
             @* ---- Zones ---- *@
-            <h2 class="h5 mt-4">Zones</h2>
-            <ValidationMessage For="() => _model.ZoneDurations" />
+            <MudText Typo="Typo.h6" Class="mt-6">Zones</MudText>
+            <MudText Typo="Typo.body2" Class="mb-2 mud-text-secondary">Drag a row by its handle to set the order zones run in.</MudText>
+            <MudText Color="Color.Error" Typo="Typo.caption"><ValidationMessage For="() => _model.ZoneDurations" /></MudText>
+
             @if (_model.ZoneDurations.Count > 0)
             {
-                <table class="table align-middle">
-                    <thead>
-                        <tr>
-                            <th>Zone</th>
-                            <th style="width: 8rem;">Duration</th>
-                            <th style="width: 7rem;">Run order</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var row in _model.ZoneDurations.OrderBy(d => d.RunOrder).ToList())
-                        {
-                            <tr>
-                                <td>@ZoneName(row.ZoneId)</td>
-                                <td><DurationInput @bind-Value="row.DurationSeconds" /></td>
-                                <td><InputNumber class="form-control" @bind-Value="row.RunOrder" /></td>
-                                <td class="text-end">
-                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => RemoveZone(row)">Remove</button>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                    <MudCheckBox T="bool" Value="AllSelected" ValueChanged="ToggleSelectAll" Label="Select all" Dense="true" />
+                    @if (SelectedCount > 0)
+                    {
+                        <MudPaper Class="d-flex align-center gap-3 px-3 py-1" Elevation="0" Outlined="true">
+                            <MudText Typo="Typo.body2">@SelectedCount selected</MudText>
+                            <DurationInput @bind-Value="_bulkDurationSeconds" Label="Set duration" Style="max-width: 8rem;" />
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="ApplyBulkDuration">Apply to selected</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ClearSelection">Clear</MudButton>
+                        </MudPaper>
+                    }
+                </MudStack>
+
+                <MudDropContainer T="ProgramEditModel.ZoneDurationRow" @ref="_dropContainer"
+                                  Items="_model.ZoneDurations"
+                                  ItemsSelector="@((item, zone) => true)"
+                                  ItemDropped="OnZoneDropped">
+                    <ChildContent>
+                        <MudDropZone T="ProgramEditModel.ZoneDurationRow" Identifier="zones" AllowReorder="true"
+                                     Class="d-flex flex-column gap-2" />
+                    </ChildContent>
+                    <ItemRenderer Context="zone">
+                        <MudPaper Class="d-flex align-center gap-3 pa-2" Elevation="1">
+                            <MudIcon Icon="@Icons.Material.Filled.DragIndicator" Class="mud-text-secondary" Style="cursor: grab;" />
+                            <MudCheckBox @bind-Value="zone.Selected" Dense="true" Color="Color.Primary" />
+                            <MudText Style="min-width: 9rem;">@ZoneName(zone.ZoneId)</MudText>
+                            <DurationInput @bind-Value="zone.DurationSeconds" Style="max-width: 7rem;" />
+                            <MudSpacer />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                           OnClick="@(() => RemoveZone(zone))" aria-label="Remove zone" />
+                        </MudPaper>
+                    </ItemRenderer>
+                </MudDropContainer>
             }
-            <div class="d-flex gap-2 align-items-center">
-                <select class="form-select" style="max-width: 16rem;" @bind="_addZoneId">
-                    <option value="0">Add a zone…</option>
+
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mt-3">
+                <MudSelect T="int" @bind-Value="_addZoneId" Label="Add a zone…" Dense="true"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 16rem;">
+                    <MudSelectItem T="int" Value="0">Add a zone…</MudSelectItem>
                     @foreach (var zone in AvailableZones())
                     {
-                        <option value="@zone.Id">@ZoneName(zone.Id)</option>
+                        <MudSelectItem T="int" Value="@zone.Id">@ZoneName(zone.Id)</MudSelectItem>
                     }
-                </select>
-                <button type="button" class="btn btn-outline-secondary" disabled="@(_addZoneId == 0)" @onclick="AddZone">Add</button>
-            </div>
+                </MudSelect>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                           Disabled="@(_addZoneId == 0)" OnClick="AddZone">Add</MudButton>
+            </MudStack>
 
             <SaveCancelToolbar Busy="_busy" OnCancel="GoBack" />
         </div>
@@ -237,6 +234,25 @@ else
     private bool _busy;
     private bool _notFound;
     private int _addZoneId;
+    private int _bulkDurationSeconds = 300;
+
+    private MudDropContainer<ProgramEditModel.ZoneDurationRow>? _dropContainer;
+
+    private int SelectedCount => _model?.ZoneDurations.Count(d => d.Selected) ?? 0;
+    private bool AllSelected => _model is { ZoneDurations.Count: > 0 } && _model.ZoneDurations.All(d => d.Selected);
+
+    // MudDatePicker binds DateTime?; the model stores DateOnly?.
+    private DateTime? SingleRunDateTime
+    {
+        get => _model?.SingleRunDate is { } d ? d.ToDateTime(TimeOnly.MinValue) : null;
+        set
+        {
+            if (_model is not null)
+            {
+                _model.SingleRunDate = value is { } dt ? DateOnly.FromDateTime(dt) : null;
+            }
+        }
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -258,34 +274,43 @@ else
         _model = ProgramEditModel.FromEntity(program);
     }
 
-    private RenderFragment StartTimeRowEditor(ProgramEditModel.StartTimeRow row, int index, bool allowRemove) => @<div class="row g-2 align-items-end mb-2">
-        <div class="col-md-4">
-            @if (index == 0)
-            {
-                <label class="form-label">Kind</label>
-            }
-            <EnumSelect TEnum="StartTimeKind" @bind-Value="row.Kind" LabelFor="DisplayLabels.StartTimeKind" />
-        </div>
-        <div class="col-md-4">
-            @if (row.Kind == StartTimeKind.FixedMinute)
-            {
-                <TimeOfDayInput @bind-Value="row.MinuteOfDay" />
-            }
-            else
-            {
-                <div class="input-group">
-                    <InputNumber class="form-control" @bind-Value="row.OffsetMinutes" />
-                    <span class="input-group-text">min</span>
-                </div>
-            }
-        </div>
-        <div class="col-md-2">
-            @if (allowRemove)
-            {
-                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => RemoveStartTime(row)">Remove</button>
-            }
-        </div>
-    </div>;
+    // Reorder via MudDropContainer: remove + re-insert at the drop index is equivalent to
+    // ProgramEditModel.MoveZone(oldIndex, newIndex) (the unit-tested reorder primitive).
+    private void OnZoneDropped(MudItemDropInfo<ProgramEditModel.ZoneDurationRow> info)
+    {
+        if (_model is null || info.Item is null)
+        {
+            return;
+        }
+
+        var oldIndex = _model.ZoneDurations.IndexOf(info.Item);
+        if (oldIndex < 0)
+        {
+            return;
+        }
+
+        var newIndex = Math.Clamp(info.IndexInZone, 0, _model.ZoneDurations.Count - 1);
+        _model.MoveZone(oldIndex, newIndex);
+        _dropContainer?.Refresh();
+    }
+
+    private RenderFragment StartTimeRowEditor(ProgramEditModel.StartTimeRow row, bool allowRemove) => @<MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-2" Style="max-width: 640px;">
+        <EnumSelect TEnum="StartTimeKind" @bind-Value="row.Kind" Label="Kind" LabelFor="DisplayLabels.StartTimeKind" />
+        @if (row.Kind == StartTimeKind.FixedMinute)
+        {
+            <TimeOfDayInput @bind-Value="row.MinuteOfDay" Label="Time" />
+        }
+        else
+        {
+            <MudNumericField @bind-Value="row.OffsetMinutes" Label="Offset" Adornment="Adornment.End"
+                             AdornmentText="min" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        }
+        @if (allowRemove)
+        {
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                           OnClick="@(() => RemoveStartTime(row))" aria-label="Remove start time" />
+        }
+    </MudStack>;
 
     private void AddStartTime()
     {
@@ -315,17 +340,57 @@ else
             return;
         }
 
-        var nextOrder = _model.ZoneDurations.Count == 0 ? 0 : _model.ZoneDurations.Max(d => d.RunOrder) + 1;
+        // Run order is the list position (renumbered on save), so just append.
         _model.ZoneDurations.Add(new ProgramEditModel.ZoneDurationRow
         {
             ZoneId = _addZoneId,
             DurationSeconds = 300,
-            RunOrder = nextOrder,
         });
         _addZoneId = 0;
+        _dropContainer?.Refresh();
     }
 
-    private void RemoveZone(ProgramEditModel.ZoneDurationRow row) => _model?.ZoneDurations.Remove(row);
+    private void RemoveZone(ProgramEditModel.ZoneDurationRow row)
+    {
+        _model?.ZoneDurations.Remove(row);
+        _dropContainer?.Refresh();
+    }
+
+    private void ApplyBulkDuration()
+    {
+        _model?.ApplyDurationToSelected(_bulkDurationSeconds);
+        _dropContainer?.Refresh();
+    }
+
+    private void ClearSelection()
+    {
+        if (_model is null)
+        {
+            return;
+        }
+
+        foreach (var row in _model.ZoneDurations)
+        {
+            row.Selected = false;
+        }
+
+        _dropContainer?.Refresh();
+    }
+
+    private void ToggleSelectAll(bool select)
+    {
+        if (_model is null)
+        {
+            return;
+        }
+
+        foreach (var row in _model.ZoneDurations)
+        {
+            row.Selected = select;
+        }
+
+        _dropContainer?.Refresh();
+    }
 
     private string ZoneName(int zoneId)
     {

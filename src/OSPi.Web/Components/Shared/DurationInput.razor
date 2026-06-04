@@ -1,14 +1,12 @@
 @*
-    Two-way bound duration input. Edits a duration in seconds but displays/accepts
-    "mm:ss" (also accepts a plain integer count of seconds). Invalid input is ignored,
-    keeping the last good value.
+    Two-way bound duration input. Edits a duration in seconds but displays/accepts "mm:ss"
+    (also accepts a plain integer count of seconds). Invalid input snaps back to the last
+    good value on blur. Wraps MudTextField.
 *@
 
-<input class="form-control @CssClass"
-       style="@Style"
-       value="@Format(Value)"
-       placeholder="mm:ss"
-       @onchange="OnChanged" />
+<MudTextField T="string" @bind-Value="_text" OnBlur="Commit" Placeholder="mm:ss"
+              Margin="Margin.Dense" Variant="Variant.Outlined" Label="@Label"
+              Class="@CssClass" Style="@Style" />
 
 @code {
     [Parameter] public int Value { get; set; }
@@ -18,6 +16,12 @@
     [Parameter] public string? CssClass { get; set; }
 
     [Parameter] public string? Style { get; set; }
+
+    [Parameter] public string? Label { get; set; }
+
+    private string _text = "0:00";
+
+    protected override void OnParametersSet() => _text = Format(Value);
 
     private static string Format(int seconds)
     {
@@ -29,19 +33,17 @@
         return $"{seconds / 60}:{seconds % 60:D2}";
     }
 
-    private async Task OnChanged(ChangeEventArgs e)
+    private async Task Commit()
     {
-        var parsed = Parse(e.Value?.ToString());
+        var parsed = Parse(_text);
         if (parsed is { } seconds && seconds != Value)
         {
             Value = seconds;
             await ValueChanged.InvokeAsync(seconds);
         }
-        else
-        {
-            // Re-render to snap the text back to the last good value.
-            await ValueChanged.InvokeAsync(Value);
-        }
+
+        // Snap the text back to the canonical formatting of the current value.
+        _text = Format(Value);
     }
 
     /// <summary>Parses "mm:ss", "m:ss", or a bare seconds integer. Returns null when invalid.</summary>

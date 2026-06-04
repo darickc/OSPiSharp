@@ -6,59 +6,55 @@
 
 <PageTitle>Programs</PageTitle>
 
-<div class="d-flex justify-content-between align-items-center">
-    <h1>Programs</h1>
-    <a class="btn btn-primary" href="config/programs/new">New program</a>
-</div>
-<p class="text-muted">Watering programs — what runs, when, and for how long.</p>
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-1">
+    <MudText Typo="Typo.h5">Programs</MudText>
+    <MudButton Href="config/programs/new" Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add">New program</MudButton>
+</MudStack>
+<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">Watering programs — what runs, when, and for how long.</MudText>
 
 @if (_programs is null)
 {
-    <p><em>Loading…</em></p>
+    <MudProgressLinear Indeterminate="true" />
 }
 else if (_programs.Count == 0)
 {
-    <div class="alert alert-light border" role="alert">
-        No programs yet. <a href="config/programs/new">Create one</a>.
-    </div>
+    <MudAlert Severity="Severity.Normal">
+        No programs yet. <MudLink Href="config/programs/new">Create one</MudLink>.
+    </MudAlert>
 }
 else
 {
-    <table class="table table-hover align-middle">
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Enabled</th>
-                <th>Schedule</th>
-                <th>Start times</th>
-                <th class="text-end">Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var program in _programs)
-            {
-                <tr>
-                    <td>@(string.IsNullOrWhiteSpace(program.Name) ? "(unnamed)" : program.Name)</td>
-                    <td>
-                        @if (program.Enabled)
-                        {
-                            <span class="badge text-bg-success">Enabled</span>
-                        }
-                        else
-                        {
-                            <span class="badge text-bg-secondary">Disabled</span>
-                        }
-                    </td>
-                    <td>@DisplayLabels.ScheduleType(program.ScheduleType)</td>
-                    <td class="text-muted">@StartTimesSummary(program)</td>
-                    <td class="text-end">
-                        <a class="btn btn-sm btn-outline-primary me-1" href="@($"config/programs/{program.Id}")">Edit</a>
-                        <button class="btn btn-sm btn-outline-danger" @onclick="() => AskDelete(program)">Delete</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    <MudTable Items="_programs" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm">
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Enabled</MudTh>
+            <MudTh>Schedule</MudTh>
+            <MudTh>Start times</MudTh>
+            <MudTh Style="text-align:right">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">@(string.IsNullOrWhiteSpace(context.Name) ? "(unnamed)" : context.Name)</MudTd>
+            <MudTd DataLabel="Enabled">
+                @if (context.Enabled)
+                {
+                    <MudChip T="string" Color="Color.Success" Size="Size.Small">Enabled</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Color="Color.Default" Size="Size.Small">Disabled</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Schedule">@DisplayLabels.ScheduleType(context.ScheduleType)</MudTd>
+            <MudTd DataLabel="Start times" Class="mud-text-secondary">@StartTimesSummary(context)</MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:right">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary"
+                               Href="@($"config/programs/{context.Id}")" aria-label="Edit" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                               OnClick="() => AskDelete(context)" aria-label="Delete" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
 }
 
 <ConfirmDeleteModal Visible="_pendingDelete is not null"
