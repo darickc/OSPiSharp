@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using System.ComponentModel.DataAnnotations
 @inject IZoneRepository ZoneRepo
+@inject IManualRunService Run
 @inject NavigationManager Nav
 
 <PageTitle>Edit Zone</PageTitle>
@@ -82,6 +83,7 @@ else
         try
         {
             await ZoneRepo.UpdateAsync(_model.ToEntity());
+            Run.ReloadConfig(); // apply zone changes (disabled, group, rain) to the running engine
             GoBack();
         }
         finally

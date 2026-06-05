@@ -12,6 +12,9 @@ public sealed record StatusSnapshot
     /// <summary>Whether hardware output is currently paused.</summary>
     public bool Paused { get; init; }
 
+    /// <summary>Seconds until the current pause expires, or 0 when not paused.</summary>
+    public int PauseSecondsRemaining { get; init; }
+
     /// <summary>If a rain delay is active, the instant it expires; otherwise null.</summary>
     public DateTimeOffset? RainDelayUntil { get; init; }
 
@@ -31,4 +34,7 @@ public sealed record ZoneStatus
 
     /// <summary>True when the zone is enqueued but its start time is still in the future.</summary>
     public bool Queued { get; init; }
+
+    /// <summary>True when the zone was running but is frozen mid-run by a system pause.</summary>
+    public bool Paused { get; init; }
 }

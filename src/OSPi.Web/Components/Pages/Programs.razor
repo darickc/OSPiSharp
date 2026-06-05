@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using ProgramEntity = OSPi.Domain.Entities.Program
 @inject IProgramRepository ProgramRepo
+@inject IManualRunService Run
 @inject NavigationManager Nav
 
 <PageTitle>Programs</PageTitle>
@@ -81,6 +82,7 @@ else
         if (_pendingDelete is not null)
         {
             await ProgramRepo.DeleteAsync(_pendingDelete.Id);
+            Run.ReloadConfig(); // stop the engine from running a deleted program
             _pendingDelete = null;
             await LoadAsync();
         }

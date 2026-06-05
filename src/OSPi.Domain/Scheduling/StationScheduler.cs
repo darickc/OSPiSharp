@@ -242,7 +242,7 @@ public static class StationScheduler
     /// concurrently (firmware <c>is_sequential_station</c>, OpenSprinkler.cpp:1722).
     /// Independent has no firmware counterpart; we treat it as concurrent.
     /// </summary>
-    private static bool IsSequential(ZoneGroup g) =>
+    public static bool IsSequential(ZoneGroup g) =>
         g is ZoneGroup.Sequential0 or ZoneGroup.Sequential1 or ZoneGroup.Sequential2 or ZoneGroup.Sequential3;
 
     private static int Gid(ZoneGroup g) => (int)g; // 0..3 for the sequential groups

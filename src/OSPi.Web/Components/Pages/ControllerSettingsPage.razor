@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using System.ComponentModel.DataAnnotations
 @inject IControllerSettingsRepository SettingsRepo
+@inject IManualRunService Run
 
 <PageTitle>Settings</PageTitle>
 
@@ -31,9 +32,14 @@ else
             </MudItem>
 
             <MudItem xs="12" sm="6">
-                <MudNumericField @bind-Value="_model.UtcOffsetMinutes" For="@(() => _model.UtcOffsetMinutes)"
-                                 Label="UTC offset (minutes)" Variant="Variant.Outlined" Margin="Margin.Dense"
-                                 HelperText="Fixed site offset from UTC, no DST (e.g. -420 = Mountain Standard). Drives schedule timing and sunrise/sunset." />
+                <MudSelect T="string" @bind-Value="_model.TimeZoneId" For="@(() => _model.TimeZoneId)"
+                           Label="Timezone" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           HelperText="@TimeZoneHelperText">
+                    @foreach (var tz in TimeZones)
+                    {
+                        <MudSelectItem T="string" Value="@tz.Id">@tz.DisplayName</MudSelectItem>
+                    }
+                </MudSelect>
             </MudItem>
 
             <MudItem xs="12">
@@ -80,6 +86,28 @@ else
     private bool _busy;
     private bool _saved;
 
+    // Cached once; the OS tz set does not change at runtime.
+    private static readonly IReadOnlyList<TimeZoneInfo> TimeZones =
+        TimeZoneInfo.GetSystemTimeZones().OrderBy(z => z.BaseUtcOffset).ToList();
+
+    // Live readout so a wrong zone is obvious: the controller's current civil time + offset.
+    private string TimeZoneHelperText
+    {
+        get
+        {
+            if (_model?.TimeZoneId is { } id &&
+                TimeZoneInfo.TryFindSystemTimeZoneById(id, out var tz))
+            {
+                var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+                var off = tz.GetUtcOffset(now);
+                var sign = off < TimeSpan.Zero ? "-" : "+";
+                return $"Controller time: {now:t} (UTC{sign}{off:hh\\:mm}). Drives schedule timing and sunrise/sunset, with DST.";
+            }
+
+            return "Select the controller's timezone. Drives schedule timing and sunrise/sunset, with DST.";
+        }
+    }
+
     // MudBlazor has no combined datetime picker, so split RainDelayUntilLocal into a date + time.
     private DateTime? RainDate
     {
@@ -123,6 +151,7 @@ else
         try
         {
             await SettingsRepo.UpdateAsync(_model.ToEntity());
+            Run.ReloadConfig(); // apply timezone / water-level / rain-delay changes live
             _saved = true;
         }
         finally
@@ -139,8 +168,8 @@ else
         [Range(0, 86_400, ErrorMessage = "Station delay must be between 0 and 86400 seconds.")]
         public int StationDelaySeconds { get; set; }
 
-        [Range(-840, 840, ErrorMessage = "UTC offset must be between -840 and 840 minutes.")]
-        public int UtcOffsetMinutes { get; set; }
+        [Required(ErrorMessage = "Select a timezone.")]
+        public string? TimeZoneId { get; set; }
 
         public bool UseWeather { get; set; } = true;
 
@@ -160,7 +189,7 @@ else
         {
             WaterLevelPercent = s.WaterLevelPercent,
             StationDelaySeconds = s.StationDelaySeconds,
-            UtcOffsetMinutes = s.UtcOffsetMinutes,
+            TimeZoneId = s.TimeZoneId,
             UseWeather = s.UseWeather,
             SequentialDefault = s.SequentialDefault,
             RainDelayActive = s.RainDelayUntil is not null,
@@ -182,7 +211,7 @@ else
                 Id = 1,
                 WaterLevelPercent = WaterLevelPercent,
                 StationDelaySeconds = StationDelaySeconds,
-                UtcOffsetMinutes = UtcOffsetMinutes,
+                TimeZoneId = TimeZoneId,
                 UseWeather = UseWeather,
                 SequentialDefault = SequentialDefault,
                 RainDelayUntil = rainDelay,

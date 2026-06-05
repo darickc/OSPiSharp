@@ -43,6 +43,39 @@ public class EngineSchedulingTests
     }
 
     [Fact]
+    public void Dst_aware_timezone_fires_a_fixed_start_an_hour_earlier_in_utc_in_summer_than_winter()
+    {
+        // A program fixed at 18:40 civil, in America/Denver (DST: UTC-6 summer, UTC-7 winter).
+        // Summer civil 18:40 == 00:40Z; winter civil 18:40 == 01:40Z. Proves matching tracks DST
+        // rather than a fixed offset, which is the bug behind "program didn't start at 6:40pm".
+        const int SixFortyPm = 18 * 60 + 40; // 1120
+
+        EngineHarness Harness(DateTimeOffset startUtc)
+        {
+            var settings = Build.Settings();
+            settings.TimeZoneId = "America/Denver";
+            var data = Build.Data(settings, Build.Zones16(),
+                new[] { Build.FixedDaily(1, SixFortyPm, (1, 60, 0)) });
+            return new EngineHarness(data, startUtc);
+        }
+
+        // Summer: fires as civil time crosses 18:40 at 00:40Z (tick 30 from 00:39:30Z).
+        var summer = Harness(new DateTimeOffset(2026, 7, 2, 0, 39, 30, TimeSpan.Zero));
+        summer.Steps(33);
+        summer.FrameAt(31).Should().BeEquivalentTo(OnlyBit(0));
+
+        // Winter at the SAME 00:40Z is only 17:40 civil — must not fire.
+        var winterEarly = Harness(new DateTimeOffset(2026, 1, 2, 0, 39, 30, TimeSpan.Zero));
+        winterEarly.Steps(33);
+        Enumerable.Range(1, 33).Should().OnlyContain(k => OnCount(winterEarly.FrameAt(k)) == 0);
+
+        // Winter fires an hour later, at 01:40Z.
+        var winterOnTime = Harness(new DateTimeOffset(2026, 1, 2, 1, 39, 30, TimeSpan.Zero));
+        winterOnTime.Steps(33);
+        winterOnTime.FrameAt(31).Should().BeEquivalentTo(OnlyBit(0));
+    }
+
+    [Fact]
     public void Parallel_group_runs_zones_concurrently()
     {
         var zones = Build.Zones16();
@@ -178,7 +211,7 @@ public class EngineSchedulingTests
     }
 
     [Fact]
-    public void Manual_run_program_preempts_a_running_sequential_zone_then_it_resumes()
+    public void Manual_run_program_queues_behind_a_running_sequential_zone()
     {
         var scheduled = Build.FixedDaily(1, StartMinute, (1, 10, 0));      // zone 1 (bit 0), 10s
         var manual = Build.FixedDaily(2, 720, (2, 4, 0));                  // zone 2 (bit 1); never auto-matches at 06:00
@@ -193,17 +226,76 @@ public class EngineSchedulingTests
         h.FrameAt(4)[0].Should().BeTrue("the scheduled zone is running before the manual start");
 
         h.Engine.Post(new EngineCommand.RunProgram(2));
-        h.Steps(10); // ticks 5..14
+        h.Steps(11); // ticks 5..15
 
-        h.FrameAt(7)[1].Should().BeTrue("the manual zone preempts and runs first");
-        h.FrameAt(7)[0].Should().BeFalse("the scheduled zone is trimmed and pushed back");
-        h.FrameAt(12)[0].Should().BeTrue("the preempted scheduled zone resumes after the manual zone");
+        // The running zone is not preempted: it keeps running its full 10s (frames 2..11).
+        h.FrameAt(7)[0].Should().BeTrue("the running zone keeps going; the manual run does not preempt it");
+        h.FrameAt(7)[1].Should().BeFalse("the manual zone is queued behind, not started immediately");
+        h.SnapshotAt(5).Zones[1].Queued.Should().BeTrue("the manual zone is queued behind the running zone");
+        h.FrameAt(11)[0].Should().BeTrue("the running zone finishes its full duration");
+
+        // The manual zone runs only after the scheduled zone completes (frames 12..15).
+        h.FrameAt(12)[0].Should().BeFalse();
+        h.FrameAt(12)[1].Should().BeTrue("the manual zone starts after the running zone finishes");
+        h.FrameAt(15)[1].Should().BeTrue();
+    }
+
+    [Fact]
+    public void Cancelling_a_running_sequential_zone_pulls_the_queued_zone_forward()
+    {
+        var first = Build.FixedDaily(1, StartMinute, (1, 10, 0)); // zone 1 (bit 0), 10s, auto-matches at 06:00
+        var second = Build.FixedDaily(2, 720, (2, 4, 0));         // zone 2 (bit 1), manual (won't match at 06:00)
+        var data = Build.Data(Build.Settings(stationDelay: 0), Build.Zones16(), new[] { first, second });
+        var h = new EngineHarness(data, Anchor);
+
+        h.Steps(4);
+        h.FrameAt(4)[0].Should().BeTrue("zone 1 is running");
+
+        h.Engine.Post(new EngineCommand.RunProgram(2));
+        h.Step(); // k5: zone 2 queued behind zone 1
+        h.SnapshotAt(5).Zones[1].Queued.Should().BeTrue();
+
+        h.Engine.Post(new EngineCommand.CancelZone(0));
+        h.Steps(5); // k6: zone 1 cancelled, zone 2 pulls forward (delay 0 ⇒ immediate); run k7..k10
+
+        h.FrameAt(6)[0].Should().BeFalse("zone 1 stopped");
+        h.FrameAt(6)[1].Should().BeTrue("zone 2 starts now instead of waiting for zone 1's original full 10s");
+        h.SnapshotAt(6).Zones[1].Queued.Should().BeFalse("zone 2 is running, not queued");
+        h.FrameAt(9)[1].Should().BeTrue("zone 2 runs its full 4s (k6..k9)");
+        h.FrameAt(10)[1].Should().BeFalse();
+    }
+
+    [Fact]
+    public void Cancelling_a_running_sequential_zone_honors_station_delay_before_the_next_zone()
+    {
+        var first = Build.FixedDaily(1, StartMinute, (1, 10, 0)); // zone 1 (bit 0), 10s
+        var second = Build.FixedDaily(2, 720, (2, 4, 0));         // zone 2 (bit 1), manual
+        var data = Build.Data(Build.Settings(stationDelay: 2), Build.Zones16(), new[] { first, second });
+        var h = new EngineHarness(data, Anchor);
+
+        h.Steps(4);
+        h.FrameAt(4)[0].Should().BeTrue("zone 1 is running");
+
+        h.Engine.Post(new EngineCommand.RunProgram(2));
+        h.Step(); // k5: zone 2 queued behind zone 1
+        h.SnapshotAt(5).Zones[1].Queued.Should().BeTrue();
+
+        h.Engine.Post(new EngineCommand.CancelZone(0));
+        h.Steps(7); // k6: zone 1 cancelled; zone 2 starts after the 2s station delay (k8); run k7..k12
+
+        h.FrameAt(6)[0].Should().BeFalse("zone 1 stopped");
+        h.FrameAt(6)[1].Should().BeFalse("station delay: zone 2 waits 2s after the early stop");
+        h.FrameAt(7)[1].Should().BeFalse("still within the station-delay gap");
+        h.SnapshotAt(7).Zones[1].Queued.Should().BeTrue("zone 2 is queued during the delay, not dropped");
+        h.FrameAt(8)[1].Should().BeTrue("zone 2 starts after the 2s station delay");
+        h.FrameAt(11)[1].Should().BeTrue("zone 2 runs its full 4s (k8..k11)");
         h.FrameAt(12)[1].Should().BeFalse();
     }
 
     [Fact]
-    public void Pause_suppresses_output_while_the_queue_keeps_advancing()
+    public void Pause_freezes_the_running_zone_and_resumes_it_with_full_remaining_time()
     {
+        // Zone 1 runs k2..k11 (10s) when undisturbed; it would turn off at k12.
         var data = Build.Data(
             Build.Settings(),
             Build.Zones16(),
@@ -214,13 +306,58 @@ public class EngineSchedulingTests
         h.FrameAt(3)[0].Should().BeTrue();
 
         h.Engine.Post(new EngineCommand.Pause(3));
-        h.Step(); // k4: paused
+        h.Step(); // k4: pause begins (2s of run elapsed, 8s remaining)
         h.FrameAt(4)[0].Should().BeFalse("output is suppressed while paused");
-        h.SnapshotAt(4).Paused.Should().BeTrue();
+
+        var s4 = h.SnapshotAt(4);
+        s4.Paused.Should().BeTrue();
+        s4.PauseSecondsRemaining.Should().Be(3);
+        s4.Zones[0].On.Should().BeFalse("the valve is off while paused");
+        s4.Zones[0].Paused.Should().BeTrue("the zone is frozen mid-run, not merely off");
+        s4.Zones[0].SecondsRemaining.Should().Be(8, "the remaining run time is frozen at the pause");
+
+        // The frozen countdown does not tick while the pause counts down.
+        h.Step(); // k5
+        h.SnapshotAt(5).PauseSecondsRemaining.Should().Be(2);
+        h.SnapshotAt(5).Zones[0].SecondsRemaining.Should().Be(8);
+        h.Step(); // k6: last paused second
+        h.SnapshotAt(6).Zones[0].SecondsRemaining.Should().Be(8);
+
+        h.Step(); // k7: pause expired, zone resumes
+        h.SnapshotAt(7).Paused.Should().BeFalse();
+        h.FrameAt(7)[0].Should().BeTrue("the zone resumes when the pause expires");
+        h.SnapshotAt(7).Zones[0].On.Should().BeTrue();
+        h.SnapshotAt(7).Zones[0].SecondsRemaining.Should().Be(8, "it resumes with its full remaining time");
+
+        // It runs the full remaining 8s (k7..k14) and turns off at k15 — pushed back by the 3s pause.
+        h.Steps(8); // k8..k15
+        h.FrameAt(14)[0].Should().BeTrue();
+        h.FrameAt(15)[0].Should().BeFalse();
+    }
+
+    [Fact]
+    public void Resume_before_the_pause_expires_restarts_the_frozen_zone_immediately()
+    {
+        var data = Build.Data(
+            Build.Settings(),
+            Build.Zones16(),
+            new[] { Build.FixedDaily(1, StartMinute, (1, 10, 0)) });
+        var h = new EngineHarness(data, Anchor);
+
+        h.Steps(3);
+        h.Engine.Post(new EngineCommand.Pause(3));
+        h.Step(); // k4: paused
+        h.FrameAt(4)[0].Should().BeFalse();
 
         h.Engine.Post(new EngineCommand.Resume());
-        h.Step(); // k5: resumed, zone still within its run window
-        h.FrameAt(5)[0].Should().BeTrue("zone resumes because its run window kept advancing");
+        h.Step(); // k5: resume processed; queue pulled back with a 1s scheduler nudge
+        h.SnapshotAt(5).Paused.Should().BeFalse();
+
+        h.Steps(9); // k6..k14
+        h.FrameAt(6)[0].Should().BeTrue("the frozen zone restarts right after an early resume");
+        // Full remaining 8s runs k6..k13, off at k14.
+        h.FrameAt(13)[0].Should().BeTrue();
+        h.FrameAt(14)[0].Should().BeFalse();
     }
 
     private static bool[] OnlyBit(int bit)

@@ -219,6 +219,7 @@ public class SprinklerToolsTests
         public void StopAll() { }
         public void Pause(int seconds) { }
         public void Resume() { }
+        public void ReloadConfig() { }
     }
 
     private sealed class FakeStateHub(StatusSnapshot? latest) : IStateHub

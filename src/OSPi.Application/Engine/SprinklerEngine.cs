@@ -72,6 +72,10 @@ public sealed class SprinklerEngine : BackgroundService
 
     private long _lastEpochMinute = long.MinValue;
     private long _pauseUntilSec;
+
+    /// <summary>Hardware bits that were running when the current pause began (frozen mid-run).</summary>
+    private readonly HashSet<int> _pausedBits = new();
+
     private DateTimeOffset? _rainDelayUntil;
 
     // Cached config snapshot + derived lookups. Written only on the loop thread; an off-thread
@@ -177,9 +181,12 @@ public sealed class SprinklerEngine : BackgroundService
         long nowSec = _clock.GetUtcNow().ToUnixTimeSeconds();
         DrainCommands(nowSec);
 
-        // Minute-roll gate on UTC epoch seconds. Under a fixed offset (no DST) this rolls at the
-        // same instant as civil minutes; civil time is built only inside matching. Revisit this
-        // invariant if DST is ever introduced.
+        // Minute-roll gate on UTC epoch seconds. Keyed on UTC (not civil) minutes, so it stays
+        // valid under DST: UTC minutes always roll uniformly and civil time is built only inside
+        // matching, which therefore still runs every minute. The only DST edge cases are the
+        // transition hours themselves — spring-forward skips an hour (starts in it don't run) and
+        // fall-back repeats an hour (starts in it can run twice); both are accepted real-world
+        // behavior.
         long nowMin = nowSec / 60;
         if (nowMin != _lastEpochMinute)
         {
@@ -207,6 +214,8 @@ public sealed class SprinklerEngine : BackgroundService
                 case EngineCommand.StopAll:
                     Array.Clear(_manual);
                     _queue.Clear();
+                    _pausedBits.Clear();
+                    _pauseUntilSec = 0;
                     break;
                 case EngineCommand.RunProgram run:
                     HandleRunProgram(run.ProgramId, nowSec);
@@ -215,9 +224,10 @@ public sealed class SprinklerEngine : BackgroundService
                     HandleRunZoneTimed(run.ZoneId, run.Seconds, nowSec);
                     break;
                 case EngineCommand.CancelZone cancel when IsValidZone(cancel.HardwareBit):
-                    // Remove the zone's queued/running item and any manual override. The next
+                    // Remove the zone's queued/running item (and compact its sequential group so
+                    // the freed time isn't left as a gap) and clear any manual override. The next
                     // per-second pass sees _logicalOn[bit] go false and closes the run-log entry.
-                    _queue.RemoveAll(q => q.HardwareBit == cancel.HardwareBit);
+                    CancelZoneAndCompact(cancel.HardwareBit, nowSec);
                     _manual[cancel.HardwareBit] = false;
                     break;
                 case EngineCommand.CancelZone cancel:
@@ -227,10 +237,10 @@ public sealed class SprinklerEngine : BackgroundService
                     HandleSetRainDelay(rd.Minutes);
                     break;
                 case EngineCommand.Pause pause:
-                    _pauseUntilSec = pause.Seconds > 0 ? nowSec + pause.Seconds : 0;
+                    HandlePause(pause.Seconds, nowSec);
                     break;
                 case EngineCommand.Resume:
-                    _pauseUntilSec = 0;
+                    HandleResume(nowSec);
                     break;
                 case EngineCommand.ReloadConfig:
                     KickReload();
@@ -245,7 +255,8 @@ public sealed class SprinklerEngine : BackgroundService
     {
         if (_data.Programs.Count == 0) return;
 
-        var civil = new CivilInstant((_clock.GetUtcNow() + TimeSpan.FromMinutes(_data.Settings.UtcOffsetMinutes)).DateTime);
+        var tz = _data.Settings.ResolveTimeZone();
+        var civil = new CivilInstant(TimeZoneInfo.ConvertTimeFromUtc(_clock.GetUtcNow().UtcDateTime, tz));
         var (sunrise, sunset) = _solar.ForDate(_data.Settings, civil.Date);
         bool rainActive = IsRainActive();
 
@@ -412,6 +423,11 @@ public sealed class SprinklerEngine : BackgroundService
         }
         else
         {
+            // Pause has lapsed (expired naturally or never set): drop any stale pause state. The
+            // shifted queue items have already resumed on their own as their start times arrived.
+            if (_pauseUntilSec != 0) _pauseUntilSec = 0;
+            if (_pausedBits.Count > 0) _pausedBits.Clear();
+
             // Overlay indefinite manual zones (these do not drive master stations).
             for (int i = 0; i < _desired.Length; i++)
                 if (_manual[i]) _desired[i] = true;
@@ -431,11 +447,14 @@ public sealed class SprinklerEngine : BackgroundService
             int? remaining = null;
             int? programId = null;
             bool queued = false;
+            bool zonePaused = paused && _pausedBits.Contains(bit);
 
             if (q is not null)
             {
                 programId = q.ProgramId == 0 ? null : q.ProgramId;
-                if (_desired[bit] && nowSec < q.StartEpochSec + q.DurationSeconds)
+                if (zonePaused)
+                    remaining = q.DurationSeconds;     // frozen remaining (static while paused)
+                else if (_desired[bit] && nowSec < q.StartEpochSec + q.DurationSeconds)
                     remaining = (int)(q.StartEpochSec + q.DurationSeconds - nowSec);
                 else if (nowSec < q.StartEpochSec)
                     queued = true;
@@ -448,6 +467,7 @@ public sealed class SprinklerEngine : BackgroundService
                 SecondsRemaining = remaining,
                 ProgramId = programId,
                 Queued = queued,
+                Paused = zonePaused,
             });
         }
 
@@ -456,6 +476,7 @@ public sealed class SprinklerEngine : BackgroundService
             TimestampUtc = now,
             Zones = zones.MoveToImmutable(),
             Paused = paused,
+            PauseSecondsRemaining = paused ? (int)(_pauseUntilSec - nowSec) : 0,
             RainDelayUntil = _rainDelayUntil is { } until && until > now ? _rainDelayUntil : null,
             WaterLevelPercent = _data.Settings.WaterLevelPercent,
         });
@@ -474,7 +495,7 @@ public sealed class SprinklerEngine : BackgroundService
 
         var pending = new List<PendingZone>();
         BuildPendingZones(program, rainActive: false, pending); // manual runs ignore rain delay
-        if (pending.Count > 0) RunPlan(pending, nowSec, insertFront: true);
+        if (pending.Count > 0) RunPlan(pending, nowSec, insertFront: false);
     }
 
     private void HandleRunZoneTimed(int hardwareBit, int seconds, long nowSec)
@@ -488,7 +509,7 @@ public sealed class SprinklerEngine : BackgroundService
         if (zone.Disabled) return;
 
         var pending = new List<PendingZone> { new(zone.Id, zone.HardwareBit, zone.Group, seconds, 0) };
-        RunPlan(pending, nowSec, insertFront: true);
+        RunPlan(pending, nowSec, insertFront: false);
     }
 
     private void HandleSetRainDelay(int minutes)
@@ -504,6 +525,72 @@ public sealed class SprinklerEngine : BackgroundService
             _rainDelayUntil = null;
         }
         PersistRainDelay(_rainDelayUntil);
+    }
+
+    /// <summary>
+    /// Freeze the queue for <paramref name="seconds"/> (firmware <c>ProgramData::set_pause</c>): a
+    /// running item keeps its remaining run time but is pushed past the pause; a future item is
+    /// pushed back; every live item's dequeue time slides forward. The station is left to turn off
+    /// on the next tick (shifted items fall outside their window), logging the pre-pause segment.
+    /// </summary>
+    private void HandlePause(int seconds, long nowSec)
+    {
+        if (seconds <= 0) return;
+        _pausedBits.Clear();
+
+        for (int i = 0; i < _queue.Count; i++)
+        {
+            var q = _queue[i];
+            if (nowSec >= q.StartEpochSec + q.DurationSeconds) continue; // already finished
+
+            if (nowSec >= q.StartEpochSec)
+            {
+                // Currently running: keep the remaining run time, resume after the pause.
+                int remaining = (int)(q.StartEpochSec + q.DurationSeconds - nowSec);
+                _queue[i] = q with
+                {
+                    StartEpochSec = nowSec + seconds,
+                    DurationSeconds = remaining,
+                    DequeueEpochSec = q.DequeueEpochSec + seconds,
+                };
+                _pausedBits.Add(q.HardwareBit);
+            }
+            else
+            {
+                // Scheduled but not yet running: push start back by the pause.
+                _queue[i] = q with
+                {
+                    StartEpochSec = q.StartEpochSec + seconds,
+                    DequeueEpochSec = q.DequeueEpochSec + seconds,
+                };
+            }
+        }
+
+        _pauseUntilSec = nowSec + seconds;
+    }
+
+    /// <summary>
+    /// Resume early (firmware <c>ProgramData::resume_stations</c>): pull every queue item's start and
+    /// dequeue back by the remaining pause, plus a 1-second nudge for the scheduler.
+    /// </summary>
+    private void HandleResume(long nowSec)
+    {
+        long left = _pauseUntilSec - nowSec;
+        if (left > 0)
+        {
+            for (int i = 0; i < _queue.Count; i++)
+            {
+                var q = _queue[i];
+                _queue[i] = q with
+                {
+                    StartEpochSec = q.StartEpochSec - left + 1,
+                    DequeueEpochSec = q.DequeueEpochSec - left + 1,
+                };
+            }
+        }
+
+        _pauseUntilSec = 0;
+        _pausedBits.Clear();
     }
 
     // ===== Planning + offset/absolute conversion (planning base = nowSec) =====
@@ -551,6 +638,43 @@ public sealed class SprinklerEngine : BackgroundService
                 it.DurationSeconds,
                 nowSec + it.DequeueOffsetSeconds,
                 it.ProgramId));
+        }
+    }
+
+    /// <summary>
+    /// Remove the zone's queue item(s) and, when it was in a sequential group, slide the rest of
+    /// that group earlier so the time freed by an early stop isn't left as a gap. The next zone
+    /// then starts as if the cancelled zone had ended now (honoring station delay), matching the
+    /// natural end-of-run behavior. A uniform shift preserves each remaining item's duration,
+    /// master off-adjust (baked into the dequeue time), and relative spacing.
+    /// </summary>
+    private void CancelZoneAndCompact(int bit, long nowSec)
+    {
+        // Earliest-start item on this bit = the running/next one; capture before removal.
+        LiveQueueItem? cancelled = null;
+        foreach (var q in _queue)
+            if (q.HardwareBit == bit && (cancelled is null || q.StartEpochSec < cancelled.StartEpochSec))
+                cancelled = q;
+
+        _queue.RemoveAll(q => q.HardwareBit == bit);
+        if (cancelled is null || !StationScheduler.IsSequential(cancelled.Group)) return;
+
+        bool wasRunning = nowSec >= cancelled.StartEpochSec;
+        long delta = wasRunning
+            ? (cancelled.StartEpochSec + cancelled.DurationSeconds) - nowSec        // its remaining run time
+            : (long)cancelled.DurationSeconds + _data.Settings.StationDelaySeconds; // its whole slot + trailing delay
+        if (delta <= 0) return;
+
+        for (int i = 0; i < _queue.Count; i++)
+        {
+            var q = _queue[i];
+            // Same sequential group, scheduled strictly after the cancelled item: pull it earlier.
+            if (q.Group != cancelled.Group || q.StartEpochSec <= cancelled.StartEpochSec) continue;
+            _queue[i] = q with
+            {
+                StartEpochSec = q.StartEpochSec - delta,
+                DequeueEpochSec = q.DequeueEpochSec - delta,
+            };
         }
     }
 

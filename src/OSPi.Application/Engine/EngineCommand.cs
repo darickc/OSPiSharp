@@ -15,11 +15,15 @@ public abstract record EngineCommand
 
     /// <summary>
     /// Manually start a program now, ignoring its calendar match. Its per-zone durations
-    /// (water-level scaled) are scheduled insert-front, preempting any running zones.
+    /// (water-level scaled) are appended to the queue behind any currently running or
+    /// queued zones in the same sequential group, rather than preempting them.
     /// </summary>
     public sealed record RunProgram(int ProgramId) : EngineCommand;
 
-    /// <summary>Manually run a single zone for a fixed number of seconds (insert-front).</summary>
+    /// <summary>
+    /// Manually run a single zone for a fixed number of seconds, appended behind any
+    /// running or queued zones in its sequential group.
+    /// </summary>
     public sealed record RunZoneTimed(int ZoneId, int Seconds) : EngineCommand;
 
     /// <summary>

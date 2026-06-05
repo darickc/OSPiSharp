@@ -28,4 +28,6 @@ public sealed class ManualRunService : IManualRunService
     public void Pause(int seconds) => _engine.Post(new EngineCommand.Pause(seconds));
 
     public void Resume() => _engine.Post(new EngineCommand.Resume());
+
+    public void ReloadConfig() => _engine.Post(new EngineCommand.ReloadConfig());
 }

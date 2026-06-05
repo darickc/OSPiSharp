@@ -1,0 +1,73 @@
+@*
+    Per-zone run/stop dialog. Render it always; toggle with Visible. When the zone is idle
+    it offers a minutes field + Run; when active (running/queued/paused) it offers Stop.
+    Raises callbacks the parent handles. Wraps MudDialog (inline, requires MudDialogProvider).
+*@
+
+<MudDialog Visible="Visible" VisibleChanged="OnVisibleChanged" Options="_options">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@ZoneName</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (IsActive)
+        {
+            <MudText>This zone is currently <strong>@StateLabel</strong>.</MudText>
+        }
+        else
+        {
+            <MudNumericField @bind-Value="_minutes" Label="Run for (min)" Min="1"
+                             Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 9rem;" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="OnCancel">Cancel</MudButton>
+        @if (IsActive)
+        {
+            <MudButton Color="Color.Error" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Stop"
+                       OnClick="OnStop">Stop</MudButton>
+        }
+        else
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.PlayArrow"
+                       Disabled="@(_minutes < 1)" OnClick="Run">Run</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private const int DefaultMinutes = 5;
+
+    private readonly DialogOptions _options = new() { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true };
+
+    private int _minutes = DefaultMinutes;
+    private bool _wasVisible;
+
+    [Parameter] public bool Visible { get; set; }
+
+    [Parameter] public string ZoneName { get; set; } = "Zone";
+
+    [Parameter] public bool IsActive { get; set; }
+
+    [Parameter] public string StateLabel { get; set; } = string.Empty;
+
+    [Parameter] public EventCallback<int> OnRun { get; set; }
+
+    [Parameter] public EventCallback OnStop { get; set; }
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    // Reset the minutes field to the default each time the dialog opens so it never carries
+    // a stale value from a previous zone.
+    protected override void OnParametersSet()
+    {
+        if (Visible && !_wasVisible) _minutes = DefaultMinutes;
+        _wasVisible = Visible;
+    }
+
+    private Task Run() => OnRun.InvokeAsync(_minutes * 60);
+
+    // The dialog can close itself (backdrop/escape); keep the parent's Visible in sync by
+    // treating any close as a cancel.
+    private Task OnVisibleChanged(bool visible) =>
+        visible ? Task.CompletedTask : OnCancel.InvokeAsync();
+}

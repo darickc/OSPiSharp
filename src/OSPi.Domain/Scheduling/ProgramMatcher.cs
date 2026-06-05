@@ -202,6 +202,50 @@ public static class ProgramMatcher
         return MatchResult.None;
     }
 
+    /// <summary>
+    /// Every minute-of-day on which the program <em>begins a run</em> on the calendar day
+    /// <paramref name="day"/> (empty when the day, schedule, or enabled flag does not match).
+    /// Fixed mode: each present start slot. Repeating mode: the anchor plus
+    /// <c>RepeatCount</c> repeats every <c>RepeatEveryMinutes</c>, kept within the same civil
+    /// day (post-midnight repeats are attributed to the following day, like the day grid shows
+    /// them). Pure projection for the scheduler view — distinct from per-minute
+    /// <see cref="CheckMatch"/>, but built from the same <see cref="CheckDayMatch"/> and
+    /// <see cref="ResolveStartMinute"/> so it stays faithful to what the engine runs.
+    /// </summary>
+    public static IReadOnlyList<int> StartMinutesOn(Program p, CivilInstant day, int sunriseMinute, int sunsetMinute)
+    {
+        if (!p.Enabled || !CheckDayMatch(p, day)) return Array.Empty<int>();
+
+        var minutes = new SortedSet<int>();
+
+        if (p.StartTimeType == StartTimeType.Fixed)
+        {
+            foreach (var st in p.StartTimes)
+                minutes.Add(ResolveStartMinute(st, sunriseMinute, sunsetMinute));
+        }
+        else
+        {
+            var anchor = FindAnchor(p);
+            if (anchor is not null)
+            {
+                int start = ResolveStartMinute(anchor, sunriseMinute, sunsetMinute);
+                minutes.Add(start);
+
+                if (p.RepeatEveryMinutes > 0)
+                {
+                    for (int k = 1; k <= p.RepeatCount; k++)
+                    {
+                        int m = start + (k * p.RepeatEveryMinutes);
+                        if (m > 1439) break; // crosses midnight — belongs to the next calendar day
+                        minutes.Add(m);
+                    }
+                }
+            }
+        }
+
+        return new List<int>(minutes);
+    }
+
     /// <summary>Date encoding monotonic in (month, day), mirroring <c>date_encode</c>.</summary>
     private static int Encode(int month, int day) => (month << 5) | day;
 

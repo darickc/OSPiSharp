@@ -3,6 +3,7 @@
 @using System.ComponentModel.DataAnnotations
 @inject IMasterStationRepository MasterRepo
 @inject IZoneRepository ZoneRepo
+@inject IManualRunService Run
 
 <PageTitle>Master Stations</PageTitle>
 
@@ -76,6 +77,7 @@ else
         try
         {
             await MasterRepo.UpdateAsync(model.ToEntity());
+            Run.ReloadConfig(); // apply master-station changes to the running engine
             model.Saved = true;
         }
         finally

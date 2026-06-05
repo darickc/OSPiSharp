@@ -16,12 +16,42 @@ public sealed class ControllerSettings
     public int StationDelaySeconds { get; set; }
 
     /// <summary>
-    /// Fixed minutes to add to UTC to obtain site civil time. <strong>No DST</strong> — this
-    /// mirrors the firmware's <c>now_tz()</c> fixed-offset model, so the scheduler's
-    /// <see cref="ControllerSettings"/>-derived civil time never shifts. Example:
-    /// US Mountain Standard Time = <c>-420</c>.
+    /// IANA/OS timezone id (e.g. <c>America/Boise</c>) used to derive site civil time
+    /// <strong>with DST</strong>. This is the source of truth for scheduling time; unlike the
+    /// firmware's fixed-offset <c>now_tz()</c>, this app has a full tz database, so the
+    /// scheduler tracks daylight-saving transitions. When unset, <see cref="ResolveTimeZone"/>
+    /// falls back to the legacy fixed <see cref="UtcOffsetMinutes"/>.
+    /// </summary>
+    public string? TimeZoneId { get; set; }
+
+    /// <summary>
+    /// Legacy fixed minutes added to UTC for site civil time, <strong>no DST</strong>. Retained
+    /// only as the fallback when <see cref="TimeZoneId"/> is unset (mirrors the firmware's
+    /// <c>now_tz()</c> model). Example: US Mountain Standard Time = <c>-420</c>.
     /// </summary>
     public int UtcOffsetMinutes { get; set; }
+
+    /// <summary>
+    /// Resolve the timezone used to derive civil time. Prefers <see cref="TimeZoneId"/> (DST-aware);
+    /// when it is unset or unknown, returns a fixed custom zone built from
+    /// <see cref="UtcOffsetMinutes"/> (no DST) so legacy data and tests keep their prior behavior.
+    /// The pure scheduling functions never see this — the engine and solar service convert through
+    /// it to produce a civil <c>DateTime</c> / per-date offset.
+    /// </summary>
+    public TimeZoneInfo ResolveTimeZone()
+    {
+        if (!string.IsNullOrWhiteSpace(TimeZoneId) &&
+            TimeZoneInfo.TryFindSystemTimeZoneById(TimeZoneId, out var tz))
+        {
+            return tz;
+        }
+
+        return TimeZoneInfo.CreateCustomTimeZone(
+            $"FixedOffset({UtcOffsetMinutes})",
+            TimeSpan.FromMinutes(UtcOffsetMinutes),
+            displayName: null,
+            standardDisplayName: null);
+    }
 
     /// <summary>Master switch for weather-based adjustment.</summary>
     public bool UseWeather { get; set; } = true;

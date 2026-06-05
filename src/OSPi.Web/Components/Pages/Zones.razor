@@ -1,3 +1,4 @@
+@page "/"
 @page "/zones"
 @rendermode InteractiveServer
 @inherits SnapshotComponentBase
@@ -21,7 +22,7 @@ else
 {
     <MudPaper Class="d-flex align-center flex-wrap gap-2 pa-2 mb-3" Elevation="0" Outlined="true">
         <MudChip T="string" Size="Size.Small" Color="@(Snapshot.Paused ? Color.Warning : Color.Success)">
-            @(Snapshot.Paused ? "Paused" : "Running")
+            @(Snapshot.Paused ? $"Paused {Fmt(Snapshot.PauseSecondsRemaining)}" : "Running")
         </MudChip>
         @if (Snapshot.RainDelayUntil is { } until)
         {
@@ -74,24 +75,28 @@ else
         @foreach (var zone in Snapshot.Zones)
         {
             <MudItem xs="6" sm="4" md="3" lg="2">
-                <MudPaper Class="d-flex flex-column align-center pa-3" Outlined="true" Style="@CardStyle(zone)">
+                <MudPaper Class="d-flex flex-column align-center pa-3" Outlined="true"
+                          Style="@(CardStyle(zone) + "cursor: pointer;")"
+                          @onclick="@(() => OpenRunDialog(zone.ZoneId))">
                     <MudText Typo="Typo.subtitle2" Align="Align.Center">@ZoneName(zone.ZoneId)</MudText>
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">@StateLabel(zone)</MudText>
-                    @if (zone.On && zone.SecondsRemaining is { } secs)
+                    @if ((zone.On || zone.Paused) && zone.SecondsRemaining is { } secs)
                     {
                         <MudText Typo="Typo.h6" Style="font-variant-numeric: tabular-nums;">@Fmt(secs)</MudText>
                     }
                     <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="min-height: 1rem;">@ProgramLabel(zone)</MudText>
-                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="mt-2">
-                        <MudNumericField @bind-Value="_timedMinutes" Min="1" Variant="Variant.Outlined"
-                                         Margin="Margin.Dense" Style="max-width: 4.5rem;" />
-                        <MudIconButton Icon="@Icons.Material.Filled.PlayArrow" Color="Color.Primary" Size="Size.Small"
-                                       OnClick="@(() => RunZoneTimed(zone.ZoneId))" aria-label="Run zone" />
-                    </MudStack>
                 </MudPaper>
             </MudItem>
         }
     </MudGrid>
+
+    <ZoneRunModal Visible="_dialogZoneId is not null"
+                  ZoneName="@ZoneName(_dialogZoneId ?? 0)"
+                  IsActive="@(DialogZone is { } dz && (dz.On || dz.Queued || dz.Paused))"
+                  StateLabel="@(DialogZone is { } dz2 ? StateLabel(dz2) : string.Empty)"
+                  OnRun="RunZoneFromDialog"
+                  OnStop="StopZoneFromDialog"
+                  OnCancel="@(() => _dialogZoneId = null)" />
 }
 
 @code {
@@ -110,7 +115,14 @@ else
 
     private int _rainDelayMinutes = 60;
     private int _pauseMinutes = 5;
-    private int _timedMinutes = 5;
+
+    // Hardware bit of the zone whose run/stop dialog is open, or null when closed.
+    private int? _dialogZoneId;
+
+    // Resolve the live zone status each render so the dialog reflects real-time engine
+    // updates (e.g. a zone finishing while the dialog is open).
+    private ZoneStatus? DialogZone =>
+        _dialogZoneId is { } bit ? Snapshot?.Zones.FirstOrDefault(z => z.ZoneId == bit) : null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -136,17 +148,18 @@ else
     // Tinted background + border per state, legible on the dark theme.
     private static string CardStyle(ZoneStatus z) => z switch
     {
+        { Paused: true } => "background: rgba(79,158,234,.20); border-color: #4f9eea;",
         { On: true } => "background: rgba(67,160,71,.22); border-color: #43a047;",
         { Queued: true } => "background: rgba(251,140,0,.20); border-color: #fb8c00;",
         _ => string.Empty,
     };
 
-    private static string StateLabel(ZoneStatus z) => z.On ? "ON" : z.Queued ? "QUEUED" : "OFF";
+    private static string StateLabel(ZoneStatus z) => z.Paused ? "PAUSED" : z.On ? "ON" : z.Queued ? "QUEUED" : "OFF";
 
     private string ProgramLabel(ZoneStatus z)
     {
         if (z.ProgramId is { } id) return _programNames.GetValueOrDefault(id, $"Program {id}");
-        return z.On ? "Manual" : "—";
+        return z.On || z.Paused ? "Manual" : "—";
     }
 
     private static string Fmt(int seconds) => $"{seconds / 60:D2}:{seconds % 60:D2}";
@@ -156,9 +169,18 @@ else
         if (_selectedProgramId != 0) ManualRun.RunProgram(_selectedProgramId);
     }
 
-    private void RunZoneTimed(int bit)
+    private void OpenRunDialog(int bit) => _dialogZoneId = bit;
+
+    private void RunZoneFromDialog(int seconds)
     {
-        if (_timedMinutes > 0) ManualRun.RunZoneTimed(bit, _timedMinutes * 60);
+        if (_dialogZoneId is { } bit && seconds > 0) ManualRun.RunZoneTimed(bit, seconds);
+        _dialogZoneId = null;
+    }
+
+    private void StopZoneFromDialog()
+    {
+        if (_dialogZoneId is { } bit) ManualRun.StopZone(bit);
+        _dialogZoneId = null;
     }
 
     private void SetRainDelay() => ManualRun.SetRainDelay(_rainDelayMinutes);

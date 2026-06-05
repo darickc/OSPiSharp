@@ -44,4 +44,11 @@ public interface IManualRunService
 
     /// <summary>Resume hardware output after a <see cref="Pause"/>.</summary>
     void Resume();
+
+    /// <summary>
+    /// Tell the engine to reload its cached scheduling data from persistence. Call after any edit
+    /// to programs, zones, master stations, or controller settings so the change takes effect
+    /// without an app restart.
+    /// </summary>
+    void ReloadConfig();
 }

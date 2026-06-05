@@ -21,7 +21,13 @@ public sealed class SolarCalculatorService : ISolarCalculator
         if (settings.LocationLatitude is not { } lat || settings.LocationLongitude is not { } lon)
             return (DefaultSunrise, DefaultSunset);
 
-        var t = SolarCalculator.Compute(lat, lon, date, settings.UtcOffsetMinutes);
+        // Offset for this civil date from the resolved zone (DST-aware). Sampled at local noon to
+        // avoid the midnight DST-transition ambiguity. With the legacy fixed-offset fallback this
+        // is constant across dates, preserving prior behavior.
+        var tz = settings.ResolveTimeZone();
+        int offsetMinutes = (int)tz.GetUtcOffset(date.ToDateTime(new TimeOnly(12, 0))).TotalMinutes;
+
+        var t = SolarCalculator.Compute(lat, lon, date, offsetMinutes);
         return t.Kind switch
         {
             // Midnight sun: treat the whole day as daylight so sunset-anchored runs land at end of day.

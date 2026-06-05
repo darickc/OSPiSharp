@@ -48,5 +48,14 @@ public static class PersistenceServiceCollectionExtensions
         var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<OSPiDbContext>>();
         await using var db = await factory.CreateDbContextAsync(ct);
         await db.Database.MigrateAsync(ct);
+
+        // First run after the timezone migration: seed the controller's zone from the host OS so
+        // existing installs immediately track DST instead of the (possibly stale) fixed offset.
+        var settings = await db.ControllerSettings.FirstOrDefaultAsync(ct);
+        if (settings is not null && string.IsNullOrWhiteSpace(settings.TimeZoneId))
+        {
+            settings.TimeZoneId = TimeZoneInfo.Local.Id;
+            await db.SaveChangesAsync(ct);
+        }
     }
 }

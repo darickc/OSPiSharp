@@ -1,9 +1,11 @@
 @page "/map"
 @rendermode InteractiveServer
 @inherits SnapshotComponentBase
+@implements IAsyncDisposable
 @inject IPropertyMapRepository Maps
 @inject IZoneRepository ZoneRepo
 @inject IManualRunService ManualRun
+@inject IJSRuntime JS
 
 <PageTitle>Property Map</PageTitle>
 
@@ -22,9 +24,7 @@ else if (string.IsNullOrEmpty(_map.ImageHash))
 else
 {
     <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-3 flex-wrap" Style="max-width: 760px;">
-        <MudNumericField @bind-Value="_runMinutes" Label="Run (min)" Min="1" Variant="Variant.Outlined"
-                         Margin="Margin.Dense" Style="max-width: 8rem;" />
-        <MudText Typo="Typo.caption" Class="mud-text-secondary">Tap a pin to run that zone.</MudText>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">Tap a pin to run or stop that zone. Pinch or scroll to zoom, drag to pan.</MudText>
         <MudSpacer />
         <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="@(() => ManualRun.StopAll())"
                    StartIcon="@Icons.Material.Filled.Stop">Stop all</MudButton>
@@ -37,26 +37,42 @@ else
         </MudAlert>
     }
 
-    <div style="@ContainerStyle">
-        <img src="@ImageUrl" alt="Property map"
-             style="width:100%; height:100%; display:block; object-fit:fill; border-radius:4px;" />
-        @foreach (var m in _map.Markers)
-        {
-            var bit = BitFor(m.ZoneId);
-            var status = StatusForBit(bit);
-            <div role="button" title="@PinTitle(m.ZoneId, status)" style="@PinStyle(m, status)"
-                 @onclick="@(() => RunMarker(bit))">
-                @(bit + 1)
-            </div>
-        }
+    <div @ref="_containerEl" style="@ContainerStyle">
+        <div data-map-content style="position:absolute; inset:0; width:100%; height:100%; transform-origin:0 0;">
+            <img src="@ImageUrl" alt="Property map"
+                 style="width:100%; height:100%; display:block; object-fit:fill; border-radius:4px;" />
+            @foreach (var m in _map.Markers)
+            {
+                var bit = BitFor(m.ZoneId);
+                var status = StatusForBit(bit);
+                <div role="button" title="@PinTitle(m.ZoneId, status)" style="@PinStyle(m, status)"
+                     @onclick="@(() => OpenDialog(bit))">
+                    @(bit + 1)
+                </div>
+            }
+        </div>
     </div>
+
+    <ZoneRunModal Visible="_dialogBit is not null"
+                  ZoneName="@ZoneNameForBit(_dialogBit ?? -1)"
+                  IsActive="@(DialogZone is { } dz && (dz.On || dz.Queued || dz.Paused))"
+                  StateLabel="@(DialogZone is { } dz2 ? StateLabel(dz2) : string.Empty)"
+                  OnRun="RunZoneFromDialog"
+                  OnStop="StopZoneFromDialog"
+                  OnCancel="@(() => _dialogBit = null)" />
 }
 
 @code {
     private PropertyMap? _map;
     private Dictionary<int, int> _bitByZoneId = new();
     private Dictionary<int, string> _nameByZoneId = new();
-    private int _runMinutes = 5;
+
+    // Hardware bit of the zone whose run/stop dialog is open, or null when closed.
+    private int? _dialogBit;
+
+    private ElementReference _containerEl;
+    private IJSObjectReference? _module;
+    private bool _panZoomReady;
 
     protected override async Task OnInitializedAsync()
     {
@@ -69,12 +85,77 @@ else
         _map = await Maps.GetAsync();
     }
 
+    // Attach pan/zoom once the map image (and its container @ref) has rendered.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_panZoomReady && _map is not null && !string.IsNullOrEmpty(_map.ImageHash))
+        {
+            _panZoomReady = true;
+            _module = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./Components/Pages/PropertyMapView.razor.js");
+            await _module.InvokeVoidAsync("init", _containerEl);
+        }
+    }
+
     private string ImageUrl => $"/property-map/image?v={_map!.ImageHash}";
 
     private string ContainerStyle =>
-        $"position:relative; width:100%; max-width:760px; aspect-ratio:{_map!.ImageWidth} / {_map.ImageHeight};";
+        $"position:relative; width:100%; max-width:760px; aspect-ratio:{_map!.ImageWidth} / {_map.ImageHeight}; " +
+        "overflow:hidden; touch-action:none;";
 
     private int BitFor(int zoneId) => _bitByZoneId.GetValueOrDefault(zoneId, -1);
+
+    // Live status of the dialog's zone, re-resolved each render so the dialog reflects
+    // real-time engine updates (e.g. a zone finishing while open).
+    private ZoneStatus? DialogZone =>
+        _dialogBit is { } bit ? Snapshot?.Zones.FirstOrDefault(z => z.ZoneId == bit) : null;
+
+    private void OpenDialog(int bit)
+    {
+        if (bit >= 0) _dialogBit = bit;
+    }
+
+    private void RunZoneFromDialog(int seconds)
+    {
+        if (_dialogBit is { } bit && seconds > 0) ManualRun.RunZoneTimed(bit, seconds);
+        _dialogBit = null;
+    }
+
+    private void StopZoneFromDialog()
+    {
+        // CancelZone: drops the queued/running item and clears any manual override.
+        if (_dialogBit is { } bit) ManualRun.StopZone(bit);
+        _dialogBit = null;
+    }
+
+    private string ZoneNameForBit(int bit)
+    {
+        foreach (var (zoneId, name) in _nameByZoneId)
+        {
+            if (_bitByZoneId.GetValueOrDefault(zoneId, -1) == bit) return name;
+        }
+        return $"Zone {bit + 1}";
+    }
+
+    private static string StateLabel(ZoneStatus z) =>
+        z.Paused ? "PAUSED" : z.On ? "ON" : z.Queued ? "QUEUED" : "OFF";
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose(); // base: unsubscribe from the snapshot feed
+        if (_module is not null)
+        {
+            try
+            {
+                await _module.InvokeVoidAsync("dispose", _containerEl);
+                await _module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit already gone; nothing to clean up.
+            }
+        }
+    }
 
     private ZoneStatus? StatusForBit(int bit)
     {
@@ -92,14 +173,6 @@ else
         }
 
         return null;
-    }
-
-    private void RunMarker(int bit)
-    {
-        if (bit >= 0 && _runMinutes > 0)
-        {
-            ManualRun.RunZoneTimed(bit, _runMinutes * 60);
-        }
     }
 
     private string PinTitle(int zoneId, ZoneStatus? status)

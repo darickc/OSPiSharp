@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject IProgramRepository ProgramRepo
 @inject IZoneRepository ZoneRepo
+@inject IManualRunService Run
 @inject NavigationManager Nav
 
 <PageTitle>@(Id is null ? "New Program" : "Edit Program")</PageTitle>
@@ -423,6 +424,7 @@ else
                 await ProgramRepo.UpdateAsync(entity);
             }
 
+            Run.ReloadConfig(); // pick up the new/edited program without an app restart
             GoBack();
         }
         finally
