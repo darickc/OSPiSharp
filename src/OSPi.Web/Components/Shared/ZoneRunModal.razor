@@ -16,7 +16,8 @@
         else
         {
             <MudNumericField @bind-Value="_minutes" Label="Run for (min)" Min="1"
-                             Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 9rem;" />
+                             Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width: 9rem;"
+                             onfocus="this.select()" />
         }
     </DialogContent>
     <DialogActions>
@@ -37,9 +38,13 @@
 @code {
     private const int DefaultMinutes = 5;
 
+    // Last duration the user ran a zone for, remembered across dialog opens and shared by every
+    // instance (Dashboard + Property Map) so the field defaults to the value they last picked.
+    private static int _lastMinutes = DefaultMinutes;
+
     private readonly DialogOptions _options = new() { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true };
 
-    private int _minutes = DefaultMinutes;
+    private int _minutes = _lastMinutes;
     private bool _wasVisible;
 
     [Parameter] public bool Visible { get; set; }
@@ -56,15 +61,18 @@
 
     [Parameter] public EventCallback OnCancel { get; set; }
 
-    // Reset the minutes field to the default each time the dialog opens so it never carries
-    // a stale value from a previous zone.
+    // Seed the minutes field with the last duration the user ran each time the dialog opens.
     protected override void OnParametersSet()
     {
-        if (Visible && !_wasVisible) _minutes = DefaultMinutes;
+        if (Visible && !_wasVisible) _minutes = _lastMinutes;
         _wasVisible = Visible;
     }
 
-    private Task Run() => OnRun.InvokeAsync(_minutes * 60);
+    private Task Run()
+    {
+        _lastMinutes = _minutes;
+        return OnRun.InvokeAsync(_minutes * 60);
+    }
 
     // The dialog can close itself (backdrop/escape); keep the parent's Visible in sync by
     // treating any close as a cancel.

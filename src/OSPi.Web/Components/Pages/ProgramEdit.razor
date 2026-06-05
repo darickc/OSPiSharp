@@ -204,7 +204,9 @@ else
                     </ChildContent>
                     <ItemRenderer Context="zone">
                         <MudPaper Class="d-flex align-center gap-3 pa-2" Elevation="1">
-                            <MudIcon Icon="@Icons.Material.Filled.DragIndicator" Class="mud-text-secondary" Style="cursor: grab;" />
+                            <MudDragHandle T="ProgramEditModel.ZoneDurationRow" Class="d-flex align-center" Style="cursor: grab;">
+                                <MudIcon Icon="@Icons.Material.Filled.DragIndicator" Class="mud-text-secondary" />
+                            </MudDragHandle>
                             <MudCheckBox @bind-Value="zone.Selected" Dense="true" Color="Color.Primary" />
                             <MudText Style="min-width: 9rem;">@ZoneName(zone.ZoneId)</MudText>
                             <DurationInput @bind-Value="zone.DurationSeconds" Style="max-width: 7rem;" />
