@@ -7,11 +7,13 @@ const MIN_SCALE = 1;
 const MAX_SCALE = 6;
 const TAP_SLOP = 8; // px of movement below which a gesture is still treated as a tap
 
-export function init(container) {
+export function init(container, ratio) {
     const content = container.querySelector('[data-map-content]');
     if (!content) {
         return;
     }
+
+    const stage = container.parentElement;
 
     const controller = new AbortController();
     const opts = { signal: controller.signal };
@@ -33,6 +35,26 @@ export function init(container) {
         tx = Math.min(0, Math.max(minX, tx));
         ty = Math.min(0, Math.max(minY, ty));
         content.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+    }
+
+    // Size the box to the largest image-aspect-ratio rectangle that fits the available
+    // area (stage width × viewport height below the stage's top), then re-clamp the
+    // current transform so a shrink never strands the panned content off-box.
+    function fit() {
+        const aw = stage.clientWidth;
+        const ah = Math.max(0, window.innerHeight - stage.getBoundingClientRect().top - 16);
+        if (aw <= 0 || ah <= 0) {
+            return;
+        }
+        let w = aw;
+        let h = w / ratio;
+        if (h > ah) {
+            h = ah;
+            w = h * ratio;
+        }
+        container.style.width = `${Math.round(w)}px`;
+        container.style.height = `${Math.round(h)}px`;
+        apply();
     }
 
     // Zoom toward a focal point (cursor or pinch midpoint) so the point under the focus
@@ -134,7 +156,15 @@ export function init(container) {
     window.addEventListener('pointerup', onPointerUp, opts);
     window.addEventListener('pointercancel', onPointerUp, opts);
 
-    container._mapPanZoom = { dispose: () => controller.abort() };
+    // Keep the box fitted to the available area. The ResizeObserver catches stage width
+    // changes (window resize, nav drawer toggle); the resize listener also catches things
+    // that move the stage's top (toolbar wrap, orientation, mobile URL-bar show/hide).
+    const ro = new ResizeObserver(() => fit());
+    ro.observe(stage);
+    window.addEventListener('resize', fit, opts);
+    fit();
+
+    container._mapPanZoom = { dispose: () => { ro.disconnect(); controller.abort(); } };
 }
 
 export function dispose(container) {
