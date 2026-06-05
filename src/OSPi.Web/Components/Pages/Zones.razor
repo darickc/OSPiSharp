@@ -20,6 +20,29 @@
 }
 else
 {
+    @if (RunningZone is { } running)
+    {
+        <MudPaper Class="d-flex align-center flex-wrap gap-3 pa-3 mb-3" Elevation="0" Outlined="true"
+                  Style="@(RunningBannerStyle + "position: sticky; top: var(--mud-appbar-height); z-index: 3; cursor: pointer;")"
+                  @onclick="@(() => OpenRunDialog(running.ZoneId))">
+            <MudIcon Icon="@Icons.Material.Filled.Opacity" Size="Size.Large"
+                     Color="@(running.Paused ? Color.Info : Color.Success)" />
+            <MudStack Spacing="0">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Currently running</MudText>
+                <MudText Typo="Typo.h6">@ZoneName(running.ZoneId)</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@ProgramLabel(running)</MudText>
+            </MudStack>
+            <MudSpacer />
+            <MudStack Spacing="0" AlignItems="AlignItems.End">
+                <MudChip T="string" Size="Size.Small" Color="@(running.Paused ? Color.Info : Color.Success)">@StateLabel(running)</MudChip>
+                @if (running.SecondsRemaining is { } secs)
+                {
+                    <MudText Typo="Typo.h5" Style="font-variant-numeric: tabular-nums;">@Fmt(secs)</MudText>
+                }
+            </MudStack>
+        </MudPaper>
+    }
+
     <MudPaper Class="d-flex align-center flex-wrap gap-2 pa-2 mb-3" Elevation="0" Outlined="true">
         <MudChip T="string" Size="Size.Small" Color="@(Snapshot.Paused ? Color.Warning : Color.Success)">
             @(Snapshot.Paused ? $"Paused {Fmt(Snapshot.PauseSecondsRemaining)}" : "Running")
@@ -123,6 +146,17 @@ else
     // updates (e.g. a zone finishing while the dialog is open).
     private ZoneStatus? DialogZone =>
         _dialogZoneId is { } bit ? Snapshot?.Zones.FirstOrDefault(z => z.ZoneId == bit) : null;
+
+    // The zone to feature at the top: prefer an actively-running zone, then a paused one.
+    private ZoneStatus? RunningZone =>
+        Snapshot?.Zones.FirstOrDefault(z => z.On) ?? Snapshot?.Zones.FirstOrDefault(z => z.Paused);
+
+    private string RunningBannerStyle => RunningZone switch
+    {
+        { Paused: true } => "background: rgba(79,158,234,.20); border-color: #4f9eea;",
+        { On: true } => "background: rgba(67,160,71,.22); border-color: #43a047;",
+        _ => string.Empty,
+    };
 
     protected override async Task OnInitializedAsync()
     {
