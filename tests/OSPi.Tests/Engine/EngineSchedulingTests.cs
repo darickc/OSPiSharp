@@ -292,6 +292,42 @@ public class EngineSchedulingTests
         h.FrameAt(12)[1].Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public void Cancelling_zone1_of_a_three_zone_program_runs_zones_2_and_3_at_full_duration(int stationDelay)
+    {
+        // One program, three sequential zones (all Sequential0 via Build.Zones16). Cancelling the
+        // running zone 1 must pull the rest of the sequence forward at FULL duration — zones 2 and 3
+        // each run their whole slot, never zone 1's leftover time, and never cascade-shorten.
+        const int D = 10; // seconds per zone; the uniform-shift math is identical at 45-min scale
+        var data = Build.Data(
+            Build.Settings(stationDelay: stationDelay),
+            Build.Zones16(),
+            new[] { Build.FixedDaily(1, StartMinute, (1, D, 0), (2, D, 1), (3, D, 2)) });
+        var h = new EngineHarness(data, Anchor);
+
+        h.Steps(6); // zone 1 (bit 0) energizes from k2; 5s of its 10s elapsed by k6
+        h.FrameAt(6)[0].Should().BeTrue("zone 1 is running mid-way");
+
+        h.Engine.Post(new EngineCommand.CancelZone(0)); // cancel zone 1 (hardware bit, 0-based)
+        h.Steps(40);                                    // run out the rest of the sequence
+
+        int OnSeconds(int bit) => Enumerable.Range(1, 46).Count(k => h.FrameAt(k)[bit]);
+
+        OnSeconds(0).Should().Be(5, "zone 1 ran k2..k6 then was cancelled");
+        OnSeconds(1).Should().Be(D, "zone 2 must run its FULL duration, not zone 1's remainder");
+        OnSeconds(2).Should().Be(D, "zone 3 must ALSO run full — guards against a cascade");
+
+        Enumerable.Range(1, 46)
+            .Count(k => h.FrameAt(k)[1] && h.FrameAt(k)[2])
+            .Should().Be(0, "zones stay strictly sequential after compaction");
+
+        int z2FirstOn = Enumerable.Range(1, 46).First(k => h.FrameAt(k)[1]);
+        h.SnapshotAt(z2FirstOn).Zones[1].SecondsRemaining
+            .Should().Be(D, "the countdown starts from the full duration, not the remainder");
+    }
+
     [Fact]
     public void Pause_freezes_the_running_zone_and_resumes_it_with_full_remaining_time()
     {
