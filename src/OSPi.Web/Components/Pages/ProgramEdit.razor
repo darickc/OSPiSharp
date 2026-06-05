@@ -176,18 +176,25 @@ else
             {
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
                     <MudCheckBox T="bool" Value="AllSelected" ValueChanged="ToggleSelectAll" Label="Select all" Dense="true" />
+                    @if (_model.ZoneDurations.Count > 1)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.SwapVert"
+                                   OnClick="ReverseZones">Reverse order</MudButton>
+                    }
                     @if (SelectedCount > 0)
                     {
                         <MudPaper Class="d-flex align-center gap-3 px-3 py-1" Elevation="0" Outlined="true">
                             <MudText Typo="Typo.body2">@SelectedCount selected</MudText>
                             <DurationInput @bind-Value="_bulkDurationSeconds" Label="Set duration" Style="max-width: 8rem;" />
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="ApplyBulkDuration">Apply to selected</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                                       StartIcon="@Icons.Material.Filled.Delete" OnClick="DeleteSelected">Delete selected</MudButton>
                             <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ClearSelection">Clear</MudButton>
                         </MudPaper>
                     }
                 </MudStack>
 
-                <MudDropContainer T="ProgramEditModel.ZoneDurationRow" @ref="_dropContainer"
+                <MudDropContainer T="ProgramEditModel.ZoneDurationRow" @ref="_dropContainer" @key="_zoneListKey"
                                   Items="_model.ZoneDurations"
                                   ItemsSelector="@((item, zone) => true)"
                                   ItemDropped="OnZoneDropped">
@@ -220,6 +227,8 @@ else
                 </MudSelect>
                 <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
                            Disabled="@(_addZoneId == 0)" OnClick="AddZone">Add</MudButton>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PlaylistAdd"
+                           Disabled="@(!AvailableZones().Any())" OnClick="AddAllZones">Add all</MudButton>
             </MudStack>
 
             <SaveCancelToolbar Busy="_busy" OnCancel="GoBack" />
@@ -238,6 +247,13 @@ else
     private int _bulkDurationSeconds = 300;
 
     private MudDropContainer<ProgramEditModel.ZoneDurationRow>? _dropContainer;
+
+    // Bumping this key forces the drop container (and its child checkboxes/duration inputs) to be
+    // recreated. MudDropContainer.Refresh() only reconciles the item collection, so in-place
+    // property changes (Selected, DurationSeconds) on existing rows won't otherwise re-render.
+    private int _zoneListKey;
+
+    private void RebuildZoneList() => _zoneListKey++;
 
     private int SelectedCount => _model?.ZoneDurations.Count(d => d.Selected) ?? 0;
     private bool AllSelected => _model is { ZoneDurations.Count: > 0 } && _model.ZoneDurations.All(d => d.Selected);
@@ -351,6 +367,38 @@ else
         _dropContainer?.Refresh();
     }
 
+    private void AddAllZones()
+    {
+        if (_model is null)
+        {
+            return;
+        }
+
+        // AvailableZones() already excludes zones already in the program, so this never duplicates.
+        foreach (var zone in AvailableZones().ToList())
+        {
+            _model.ZoneDurations.Add(new ProgramEditModel.ZoneDurationRow
+            {
+                ZoneId = zone.Id,
+                DurationSeconds = 300,
+            });
+        }
+
+        _addZoneId = 0;
+        _dropContainer?.Refresh();
+    }
+
+    private void ReverseZones()
+    {
+        if (_model is null)
+        {
+            return;
+        }
+
+        _model.ZoneDurations.Reverse();
+        _dropContainer?.Refresh();
+    }
+
     private void RemoveZone(ProgramEditModel.ZoneDurationRow row)
     {
         _model?.ZoneDurations.Remove(row);
@@ -360,6 +408,17 @@ else
     private void ApplyBulkDuration()
     {
         _model?.ApplyDurationToSelected(_bulkDurationSeconds);
+        RebuildZoneList();
+    }
+
+    private void DeleteSelected()
+    {
+        if (_model is null)
+        {
+            return;
+        }
+
+        _model.ZoneDurations.RemoveAll(d => d.Selected);
         _dropContainer?.Refresh();
     }
 
@@ -375,7 +434,7 @@ else
             row.Selected = false;
         }
 
-        _dropContainer?.Refresh();
+        RebuildZoneList();
     }
 
     private void ToggleSelectAll(bool select)
@@ -390,7 +449,7 @@ else
             row.Selected = select;
         }
 
-        _dropContainer?.Refresh();
+        RebuildZoneList();
     }
 
     private string ZoneName(int zoneId)

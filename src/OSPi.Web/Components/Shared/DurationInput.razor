@@ -1,12 +1,13 @@
 @*
-    Two-way bound duration input. Edits a duration in seconds but displays/accepts "mm:ss"
-    (also accepts a plain integer count of seconds). Invalid input snaps back to the last
-    good value on blur. Wraps MudTextField.
+    Two-way bound duration input. Edits a duration in whole minutes but keeps its public
+    contract in seconds (Value/ValueChanged are seconds) so callers and the downstream
+    pipeline are unchanged. Wraps MudNumericField.
 *@
 
-<MudTextField T="string" @bind-Value="_text" OnBlur="Commit" Placeholder="mm:ss"
-              Margin="Margin.Dense" Variant="Variant.Outlined" Label="@Label"
-              Class="@CssClass" Style="@Style" />
+<MudNumericField T="int" Value="_minutes" ValueChanged="OnMinutesChanged" Min="1"
+                 Adornment="Adornment.End" AdornmentText="min" Margin="Margin.Dense"
+                 Variant="Variant.Outlined" Label="@Label" Class="@CssClass" Style="@Style"
+                 onfocus="this.select()" />
 
 @code {
     [Parameter] public int Value { get; set; }
@@ -19,56 +20,20 @@
 
     [Parameter] public string? Label { get; set; }
 
-    private string _text = "0:00";
+    private int _minutes = 1;
 
-    protected override void OnParametersSet() => _text = Format(Value);
+    // Round seconds to the nearest whole minute (floor at 1).
+    protected override void OnParametersSet() => _minutes = Math.Max(1, (Value + 30) / 60);
 
-    private static string Format(int seconds)
+    private async Task OnMinutesChanged(int minutes)
     {
-        if (seconds < 0)
-        {
-            seconds = 0;
-        }
-
-        return $"{seconds / 60}:{seconds % 60:D2}";
-    }
-
-    private async Task Commit()
-    {
-        var parsed = Parse(_text);
-        if (parsed is { } seconds && seconds != Value)
+        minutes = Math.Max(1, minutes);
+        _minutes = minutes;
+        var seconds = minutes * 60;
+        if (seconds != Value)
         {
             Value = seconds;
             await ValueChanged.InvokeAsync(seconds);
         }
-
-        // Snap the text back to the canonical formatting of the current value.
-        _text = Format(Value);
-    }
-
-    /// <summary>Parses "mm:ss", "m:ss", or a bare seconds integer. Returns null when invalid.</summary>
-    public static int? Parse(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return null;
-        }
-
-        text = text.Trim();
-        var colon = text.IndexOf(':');
-        if (colon < 0)
-        {
-            return int.TryParse(text, out var secs) && secs >= 0 ? secs : null;
-        }
-
-        var minutePart = text[..colon];
-        var secondPart = text[(colon + 1)..];
-        if (int.TryParse(minutePart, out var minutes) && minutes >= 0 &&
-            int.TryParse(secondPart, out var seconds) && seconds is >= 0 and < 60)
-        {
-            return (minutes * 60) + seconds;
-        }
-
-        return null;
     }
 }
