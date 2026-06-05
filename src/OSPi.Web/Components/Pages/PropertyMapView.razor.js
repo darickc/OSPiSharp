@@ -1,7 +1,9 @@
 // Client-side pan/zoom for the property map. Runs entirely in the browser so pointer
-// moves never round-trip the Blazor Server circuit; only pin clicks reach C#. Applies a
-// CSS transform to the [data-map-content] wrapper (a static-styled element Blazor's diff
-// never rewrites), keeping percentage-positioned markers aligned at every zoom level.
+// moves never round-trip the Blazor Server circuit; only pin clicks reach C#. The
+// container is the full available viewport; [data-map-content] is the fitted image box
+// (cw x ch) panned/zoomed within it via a CSS transform. That content element is
+// static-styled (Blazor's diff never rewrites it), so percentage-positioned markers stay
+// aligned at every zoom level and the --pin-scale custom property survives pin re-renders.
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 6;
@@ -22,53 +24,73 @@ export function init(container, ratio) {
     let tx = 0;
     let ty = 0;
 
+    // Geometry set by fit(): content base box (cw x ch) and viewport (vw x vh).
+    let cw = 0;
+    let ch = 0;
+    let vw = 0;
+    let vh = 0;
+
     const pointers = new Map(); // pointerId -> { x, y }
     let dragStart = null;       // { x, y, tx, ty } for single-pointer pan
     let lastDist = 0;           // last pinch distance
     let moved = 0;              // accumulated movement of the active gesture
 
-    function apply() {
-        const rect = container.getBoundingClientRect();
-        // Clamp so the scaled content never pulls its edges inside the viewport.
-        const minX = rect.width * (1 - scale);
-        const minY = rect.height * (1 - scale);
-        tx = Math.min(0, Math.max(minX, tx));
-        ty = Math.min(0, Math.max(minY, ty));
-        content.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+    // Clamp/center one axis. rendered = base*scale. When the content is no larger than the
+    // viewport on that axis it is centered (and locked); otherwise translation is clamped
+    // so an edge never pulls inside the viewport.
+    function clampAxis(t, base, viewport) {
+        const rendered = base * scale;
+        if (rendered <= viewport) {
+            return (viewport - rendered) / 2;
+        }
+        return Math.min(0, Math.max(viewport - rendered, t));
     }
 
-    // Size the box to the largest image-aspect-ratio rectangle that fits the available
-    // area (stage width × viewport height below the stage's top), then re-clamp the
-    // current transform so a shrink never strands the panned content off-box.
+    function apply() {
+        tx = clampAxis(tx, cw, vw);
+        ty = clampAxis(ty, ch, vh);
+        content.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+        // Counter-scale pins so they keep a constant on-screen size while zooming.
+        content.style.setProperty('--pin-scale', `${1 / scale}`);
+    }
+
+    // The container fills the full available area (stage width x viewport height below the
+    // stage top). [data-map-content] is sized to the largest image-ratio rect fitting that
+    // area. Re-clamp afterward so a shrink never strands panned content off-box.
     function fit() {
-        const aw = stage.clientWidth;
-        const ah = Math.max(0, window.innerHeight - stage.getBoundingClientRect().top - 16);
-        if (aw <= 0 || ah <= 0) {
+        vw = stage.clientWidth;
+        vh = Math.max(0, window.innerHeight - stage.getBoundingClientRect().top - 16);
+        if (vw <= 0 || vh <= 0) {
             return;
         }
-        let w = aw;
+        let w = vw;
         let h = w / ratio;
-        if (h > ah) {
-            h = ah;
+        if (h > vh) {
+            h = vh;
             w = h * ratio;
         }
-        container.style.width = `${Math.round(w)}px`;
-        container.style.height = `${Math.round(h)}px`;
+        cw = Math.round(w);
+        ch = Math.round(h);
+
+        container.style.width = `${vw}px`;
+        container.style.height = `${vh}px`;
+        content.style.width = `${cw}px`;
+        content.style.height = `${ch}px`;
         apply();
     }
 
     // Zoom toward a focal point (cursor or pinch midpoint) so the point under the focus
-    // stays put.
+    // stays put. focus is in viewport-local coords (clientX - container.left).
     function zoomAt(clientX, clientY, factor) {
         const rect = container.getBoundingClientRect();
-        const px = clientX - rect.left;
-        const py = clientY - rect.top;
+        const fx = clientX - rect.left;
+        const fy = clientY - rect.top;
         const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor));
         if (next === scale) {
             return;
         }
-        tx = px - (px - tx) * (next / scale);
-        ty = py - (py - ty) * (next / scale);
+        tx = fx - (fx - tx) * (next / scale);
+        ty = fy - (fy - ty) * (next / scale);
         scale = next;
         apply();
     }
@@ -81,6 +103,11 @@ export function init(container, ratio) {
     function midpoint() {
         const [a, b] = [...pointers.values()];
         return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    }
+
+    // True when either axis can pan (content larger than the viewport on that axis).
+    function pannable() {
+        return cw * scale > vw + 0.5 || ch * scale > vh + 0.5;
     }
 
     function onWheel(e) {
@@ -117,10 +144,11 @@ export function init(container, ratio) {
             }
             lastDist = d;
             moved = TAP_SLOP + 1; // a pinch is never a tap
-        } else if (dragStart && scale > 1) {
+        } else if (dragStart && pannable()) {
             const dx = e.clientX - dragStart.x;
             const dy = e.clientY - dragStart.y;
             moved = Math.max(moved, Math.abs(dx) + Math.abs(dy));
+            // clampAxis() (in apply) keeps centered/locked axes from drifting.
             tx = dragStart.tx + dx;
             ty = dragStart.ty + dy;
             apply();
@@ -156,9 +184,9 @@ export function init(container, ratio) {
     window.addEventListener('pointerup', onPointerUp, opts);
     window.addEventListener('pointercancel', onPointerUp, opts);
 
-    // Keep the box fitted to the available area. The ResizeObserver catches stage width
-    // changes (window resize, nav drawer toggle); the resize listener also catches things
-    // that move the stage's top (toolbar wrap, orientation, mobile URL-bar show/hide).
+    // Keep the viewport fitted to the available area. The ResizeObserver catches stage
+    // width changes (window resize, nav drawer toggle); the resize listener also catches
+    // things that move the stage's top (toolbar wrap, orientation, mobile URL-bar toggle).
     const ro = new ResizeObserver(() => fit());
     ro.observe(stage);
     window.addEventListener('resize', fit, opts);
