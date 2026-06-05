@@ -1,0 +1,99 @@
+.cal {
+    display: flex;
+    border: 1px solid var(--mud-palette-lines-default);
+    border-radius: var(--mud-default-borderradius);
+    overflow: hidden;
+    background: var(--mud-palette-surface);
+}
+
+.col {
+    flex: 1 1 0;
+    min-width: 0;
+    border-left: 1px solid var(--mud-palette-lines-default);
+}
+
+.col.gutter {
+    flex: 0 0 44px;
+    border-left: none;
+}
+
+.col.today {
+    background: var(--mud-palette-action-default-hover);
+}
+
+.day-head {
+    height: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid var(--mud-palette-lines-default);
+    line-height: 1.1;
+}
+
+.day-head .dow {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: var(--mud-palette-text-secondary);
+}
+
+.day-head .dom {
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.col.today .day-head .dom {
+    color: var(--mud-palette-primary);
+}
+
+.body {
+    position: relative;
+}
+
+/* gutter hour labels align 1:1 with the hour cells (44px each) */
+.hour-label {
+    height: 44px;
+    font-size: 0.65rem;
+    color: var(--mud-palette-text-secondary);
+    text-align: right;
+    padding-right: 4px;
+    transform: translateY(-0.4em); /* sit the label on the gridline */
+}
+
+.hour-cell {
+    height: 44px;
+    border-top: 1px solid var(--mud-palette-lines-default);
+}
+
+.hour-cell:first-child {
+    border-top: none;
+}
+
+.event {
+    position: absolute;
+    box-sizing: border-box;
+    left: 0;
+    right: 0;
+    border-radius: 4px;
+    padding: 1px 4px;
+    color: #fff;
+    overflow: hidden;
+    font-size: 0.7rem;
+    line-height: 1.15;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    cursor: default;
+}
+
+.event.continued {
+    border-top: 2px dashed rgba(255, 255, 255, 0.7);
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
+
+.event .ev-name {
+    display: block;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}

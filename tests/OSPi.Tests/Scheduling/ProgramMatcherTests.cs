@@ -329,4 +329,98 @@ public class ProgramMatcherTests
 
         ProgramMatcher.CheckMatch(p, At(2024, 1, 1, 6, 0), NoSun, NoSun).Matched.Should().BeFalse();
     }
+
+    // ===== StartMinutesOn: the scheduler-view day projection =====
+
+    // --- 22: Fixed mode returns every present slot, ordered and de-duplicated ---
+    [Fact]
+    public void StartMinutesOn_fixed_returns_all_slots_sorted()
+    {
+        var p = Weekly(0b1111111);
+        p.StartTimes.Add(new ProgramStartTime { Slot = 1, Kind = StartTimeKind.FixedMinute, Value = 420 }); // 07:00
+        p.StartTimes.Add(new ProgramStartTime { Slot = 0, Kind = StartTimeKind.FixedMinute, Value = 360 }); // 06:00
+        p.StartTimes.Add(new ProgramStartTime { Slot = 2, Kind = StartTimeKind.FixedMinute, Value = 360 }); // dup 06:00
+
+        ProgramMatcher.StartMinutesOn(p, At(2024, 1, 1), NoSun, NoSun).Should().Equal(360, 420);
+    }
+
+    // --- 23: A day the schedule does not match yields nothing ---
+    [Fact]
+    public void StartMinutesOn_empty_when_day_does_not_match()
+    {
+        var monOnly = Weekly(0b0000001); // Monday only
+        monOnly.StartTimes.Add(new ProgramStartTime { Slot = 0, Kind = StartTimeKind.FixedMinute, Value = 360 });
+
+        ProgramMatcher.StartMinutesOn(monOnly, At(2024, 1, 2), NoSun, NoSun).Should().BeEmpty(); // Tuesday
+    }
+
+    // --- 24: Repeating expands anchor + k*interval, same calendar day only ---
+    [Fact]
+    public void StartMinutesOn_repeating_expands_within_the_day()
+    {
+        var p = Weekly(0b1111111);
+        p.StartTimeType = StartTimeType.Repeating;
+        p.RepeatEveryMinutes = 30;
+        p.RepeatCount = 3;
+        p.StartTimes.Add(new ProgramStartTime { Slot = 0, Value = 360 }); // 06:00
+
+        ProgramMatcher.StartMinutesOn(p, At(2024, 1, 1), NoSun, NoSun)
+            .Should().Equal(360, 390, 420, 450); // 06:00, 06:30, 07:00, 07:30
+
+        // Repeats that cross midnight are dropped (they belong to the next day's column).
+        p.StartTimes.Clear();
+        p.StartTimes.Add(new ProgramStartTime { Slot = 0, Value = 1430 }); // 23:50
+        ProgramMatcher.StartMinutesOn(p, At(2024, 1, 1), NoSun, NoSun).Should().Equal(1430);
+    }
+
+    // --- 25: Sunrise/sunset slots resolve via the supplied sun minutes ---
+    [Fact]
+    public void StartMinutesOn_resolves_sunrise_and_sunset_slots()
+    {
+        var p = Weekly(0b1111111);
+        p.StartTimes.Add(new ProgramStartTime { Slot = 0, Kind = StartTimeKind.SunriseOffset, Value = -15 });
+        p.StartTimes.Add(new ProgramStartTime { Slot = 1, Kind = StartTimeKind.SunsetOffset, Value = 0 });
+
+        ProgramMatcher.StartMinutesOn(p, At(2024, 6, 1), sunriseMinute: 360, sunsetMinute: 1200)
+            .Should().Equal(345, 1200);
+    }
+
+    // --- 26: Single-run only on its date; Interval honors its modulus ---
+    [Fact]
+    public void StartMinutesOn_respects_single_run_and_interval_days()
+    {
+        var single = new Program
+        {
+            Enabled = true,
+            ScheduleType = ScheduleType.SingleRun,
+            SingleRunDate = new DateOnly(2024, 6, 15),
+            StartTimeType = StartTimeType.Fixed,
+        };
+        single.StartTimes.Add(new ProgramStartTime { Slot = 0, Kind = StartTimeKind.FixedMinute, Value = 480 });
+        ProgramMatcher.StartMinutesOn(single, At(2024, 6, 15), NoSun, NoSun).Should().Equal(480);
+        ProgramMatcher.StartMinutesOn(single, At(2024, 6, 16), NoSun, NoSun).Should().BeEmpty();
+
+        var interval = new Program
+        {
+            Enabled = true,
+            ScheduleType = ScheduleType.Interval,
+            IntervalDays = 3,
+            IntervalRemainder = 1, // matches 2024-01-01 (epoch day % 3 == 1)
+            StartTimeType = StartTimeType.Fixed,
+        };
+        interval.StartTimes.Add(new ProgramStartTime { Slot = 0, Kind = StartTimeKind.FixedMinute, Value = 300 });
+        ProgramMatcher.StartMinutesOn(interval, At(2024, 1, 1), NoSun, NoSun).Should().Equal(300);
+        ProgramMatcher.StartMinutesOn(interval, At(2024, 1, 2), NoSun, NoSun).Should().BeEmpty();
+    }
+
+    // --- 27: Disabled program projects nothing ---
+    [Fact]
+    public void StartMinutesOn_empty_when_disabled()
+    {
+        var p = Weekly(0b1111111);
+        p.Enabled = false;
+        p.StartTimes.Add(new ProgramStartTime { Slot = 0, Kind = StartTimeKind.FixedMinute, Value = 360 });
+
+        ProgramMatcher.StartMinutesOn(p, At(2024, 1, 1), NoSun, NoSun).Should().BeEmpty();
+    }
 }

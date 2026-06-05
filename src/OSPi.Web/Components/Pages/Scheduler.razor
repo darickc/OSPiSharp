@@ -1,0 +1,281 @@
+@page "/scheduler"
+@rendermode InteractiveServer
+@using OSPi.Domain.Scheduling
+@using OSPi.Web.Scheduling
+@inject ISchedulingDataRepository SchedulingRepo
+@inject ISolarCalculator Solar
+
+<PageTitle>Scheduler</PageTitle>
+
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-1">
+    <MudText Typo="Typo.h5">Scheduler</MudText>
+    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+        <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="PrevWeek" aria-label="Previous week" />
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="ThisWeek">Today</MudButton>
+        <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="NextWeek" aria-label="Next week" />
+    </MudStack>
+</MudStack>
+<MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+    When enabled programs run this week. @WeekRangeLabel. Each block is a zone's scheduled run;
+    sequential order and station delay are approximated (parallel overlap, water level, and rain
+    delay aren't reflected).
+</MudText>
+
+@if (_data is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    @if (_totalOccurrences == 0)
+    {
+        <MudAlert Severity="Severity.Normal" Class="mb-3">
+            No enabled programs run during this week.
+        </MudAlert>
+    }
+
+    <div class="cal">
+        <div class="col gutter">
+            <div class="day-head corner"></div>
+            <div class="body">
+                @for (int h = 0; h < 24; h++)
+                {
+                    <div class="hour-label">@HourLabel(h)</div>
+                }
+            </div>
+        </div>
+
+        @foreach (var day in _week)
+        {
+            <div class="col @(day.IsToday ? "today" : "")">
+                <div class="day-head">
+                    <div class="dow">@day.Date.ToString("ddd")</div>
+                    <div class="dom">@day.Date.Day</div>
+                </div>
+                <div class="body">
+                    @for (int h = 0; h < 24; h++)
+                    {
+                        <div class="hour-cell"></div>
+                    }
+                    @foreach (var ev in day.Events)
+                    {
+                        <div class="event @(ev.Continued ? "continued" : "")"
+                             style="top:@(Px(ev.TopPx))px;height:@(Px(ev.HeightPx))px;left:@(ev.LeftPct)%;width:@(ev.WidthPct)%;background:@ev.Color;"
+                             title="@ev.Tooltip">
+                            <span class="ev-name">@(ev.Continued ? "↳ " : "")@ev.ZoneName</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private const int HourPx = 44;            // pixel height of one hour row
+    private const int MinEventPx = 16;        // floor so very short runs stay visible
+
+    private static readonly string[] Palette =
+    {
+        "#1e88e5", "#43a047", "#e53935", "#fb8c00",
+        "#8e24aa", "#00897b", "#3949ab", "#c0ca33",
+    };
+
+    private SchedulingData? _data;
+    private DateOnly _weekStart;              // Monday
+    private List<DayColumn> _week = new();
+    private int _totalOccurrences;
+
+    private Dictionary<int, string> _zoneNames = new();   // zone id -> display name
+    private HashSet<int> _masterZoneIds = new();          // zones that are master outputs
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        _weekStart = MondayOf(today);
+        _data = await SchedulingRepo.LoadAllAsync();
+
+        _zoneNames = _data.Zones.ToDictionary(z => z.Id, ZoneLabel);
+        _masterZoneIds = _data.Masters
+            .Where(m => m.ZoneId.HasValue)
+            .Select(m => m.ZoneId!.Value)
+            .ToHashSet();
+
+        BuildWeek();
+    }
+
+    private void PrevWeek() { _weekStart = _weekStart.AddDays(-7); BuildWeek(); }
+    private void NextWeek() { _weekStart = _weekStart.AddDays(7); BuildWeek(); }
+    private void ThisWeek() { _weekStart = MondayOf(DateOnly.FromDateTime(DateTime.Today)); BuildWeek(); }
+
+    private string WeekRangeLabel =>
+        $"{_weekStart:MMM d} – {_weekStart.AddDays(6):MMM d, yyyy}";
+
+    private void BuildWeek()
+    {
+        _week = new List<DayColumn>(7);
+        _totalOccurrences = 0;
+        if (_data is null) return;
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var enabled = _data.Programs.Where(p => p.Enabled).ToList();
+        int delaySec = _data.Settings.StationDelaySeconds;
+
+        var columns = new List<EventBlock>[7];
+        for (int c = 0; c < 7; c++) columns[c] = new List<EventBlock>();
+
+        // Scan occurrence dates from the day BEFORE the week through its last day: a run starting
+        // late on the prior Sunday can spill into Monday, and any run can spill into the next day.
+        for (int i = -1; i < 7; i++)
+        {
+            var date = _weekStart.AddDays(i);
+            var civil = new CivilInstant(date.ToDateTime(TimeOnly.MinValue));
+            var (sunrise, sunset) = Solar.ForDate(_data.Settings, date);
+
+            foreach (var p in enabled)
+            {
+                var programName = string.IsNullOrWhiteSpace(p.Name) ? "(unnamed)" : p.Name;
+                var color = Palette[Math.Abs(p.Id) % Palette.Length];
+
+                foreach (var startMin in ProgramMatcher.StartMinutesOn(p, civil, sunrise, sunset))
+                {
+                    // Lay the program's zones back-to-back from its start, in run order. Sequential
+                    // approximation: parallel/independent groups aren't overlapped (see caveat above).
+                    int cursorSec = startMin * 60;
+                    foreach (var d in p.ZoneDurations.OrderBy(z => z.RunOrder))
+                    {
+                        if (!_zoneNames.TryGetValue(d.ZoneId, out var zoneName)) continue; // unknown/deleted zone
+                        if (_masterZoneIds.Contains(d.ZoneId)) continue;                   // master output, not user-run
+                        if (IsDisabled(d.ZoneId)) continue;                                // disabled zones never run
+                        if (d.DurationSeconds <= 0) continue;
+
+                        int zoneStartSec = cursorSec;
+                        int zoneEndSec = cursorSec + d.DurationSeconds;
+                        cursorSec = zoneEndSec + delaySec;
+
+                        // Split at midnight boundaries and drop each slice into its day's column.
+                        foreach (var seg in ScheduleLayout.SplitAcrossDays(zoneStartSec, zoneEndSec))
+                        {
+                            int col = i + seg.DayOffset;
+                            if (col < 0 || col > 6) continue; // outside the visible week
+
+                            int segDurSec = seg.WithinEndSec - seg.WithinStartSec;
+                            columns[col].Add(new EventBlock
+                            {
+                                ZoneName = zoneName,
+                                StartSec = seg.WithinStartSec,
+                                DurationSec = segDurSec,
+                                Continued = seg.Continued,
+                                Color = color,
+                                Tooltip = ZoneTooltip(programName, zoneName, zoneStartSec, zoneEndSec, seg.Continued),
+                                TopPx = seg.WithinStartSec / 3600.0 * HourPx,
+                                HeightPx = Math.Max(MinEventPx, segDurSec / 3600.0 * HourPx),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        for (int i = 0; i < 7; i++)
+        {
+            var date = _weekStart.AddDays(i);
+            PackLanes(columns[i]);
+            _totalOccurrences += columns[i].Count;
+            _week.Add(new DayColumn { Date = date, IsToday = date == today, Events = columns[i] });
+        }
+    }
+
+    private bool IsDisabled(int zoneId)
+    {
+        var zone = _data!.Zones.FirstOrDefault(z => z.Id == zoneId);
+        return zone is { Disabled: true };
+    }
+
+    private static string ZoneLabel(Zone z) =>
+        string.IsNullOrWhiteSpace(z.Name) ? $"Zone {z.HardwareBit + 1}" : z.Name;
+
+    // Minimum-visible block height expressed in seconds, so packing avoids *visual* overlaps too.
+    private static readonly int MinEventSec = (int)Math.Round(MinEventPx / (double)HourPx * 3600);
+
+    // First-fit lane packing so blocks that would overlap on screen sit side by side instead of
+    // stacking on top of each other. Uses each block's RENDERED extent (max of its true duration and
+    // the min-height floor), so even a run of very short, back-to-back zones stays individually
+    // readable rather than collapsing into one cell.
+    private static void PackLanes(List<EventBlock> events)
+    {
+        events.Sort((a, b) => a.StartSec.CompareTo(b.StartSec));
+        var laneEnds = new List<int>(); // rendered end-second of the last event in each lane
+        foreach (var e in events)
+        {
+            int end = e.StartSec + Math.Max(e.DurationSec, MinEventSec);
+            int lane = -1;
+            for (int l = 0; l < laneEnds.Count; l++)
+            {
+                if (laneEnds[l] <= e.StartSec) { lane = l; break; }
+            }
+            if (lane < 0) { lane = laneEnds.Count; laneEnds.Add(end); }
+            else { laneEnds[lane] = end; }
+            e.Lane = lane;
+        }
+
+        int lanes = Math.Max(1, laneEnds.Count);
+        foreach (var e in events)
+        {
+            e.LeftPct = Math.Round(e.Lane * 100.0 / lanes, 2);
+            e.WidthPct = Math.Round(100.0 / lanes, 2);
+        }
+    }
+
+    private static int Px(double units) => (int)Math.Round(units);
+
+    private static string ZoneTooltip(string programName, string zoneName, int startSec, int endSec, bool continued)
+    {
+        int durMin = Math.Max(1, (endSec - startSec) / 60);
+        var cont = continued ? " · continued from previous day" : "";
+        return $"{zoneName}\n{programName} • {FormatClock(startSec)}–{FormatClock(endSec)} • {durMin} min{cont}";
+    }
+
+    private static DateOnly MondayOf(DateOnly d)
+    {
+        int offset = ((int)d.DayOfWeek + 6) % 7; // Mon=0 .. Sun=6
+        return d.AddDays(-offset);
+    }
+
+    private static string HourLabel(int h)
+    {
+        if (h == 0) return "12a";
+        if (h == 12) return "12p";
+        return h < 12 ? $"{h}a" : $"{h - 12}p";
+    }
+
+    // Clock time for a second-of-(multi-)day value, wrapping past midnight (e.g. 90000s -> 1:00 AM).
+    private static string FormatClock(int absSec)
+    {
+        int minuteOfDay = (absSec / 60) % 1440;
+        if (minuteOfDay < 0) minuteOfDay += 1440;
+        return new DateTime(2000, 1, 1, minuteOfDay / 60, minuteOfDay % 60, 0).ToString("h:mm tt");
+    }
+
+    private sealed class DayColumn
+    {
+        public DateOnly Date { get; init; }
+        public bool IsToday { get; init; }
+        public List<EventBlock> Events { get; init; } = new();
+    }
+
+    private sealed class EventBlock
+    {
+        public string ZoneName { get; init; } = "";
+        public int StartSec { get; init; }
+        public int DurationSec { get; init; }
+        public bool Continued { get; init; }
+        public string Color { get; init; } = "#1e88e5";
+        public string Tooltip { get; init; } = "";
+        public int Lane { get; set; }
+        public double LeftPct { get; set; }
+        public double WidthPct { get; set; } = 100;
+        public double TopPx { get; init; }
+        public double HeightPx { get; init; }
+    }
+}
