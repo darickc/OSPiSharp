@@ -2,8 +2,12 @@
 @rendermode InteractiveServer
 @using OSPi.Domain.Scheduling
 @using OSPi.Web.Scheduling
+@using MudBlazor.Services
+@implements IBrowserViewportObserver
+@implements IAsyncDisposable
 @inject ISchedulingDataRepository SchedulingRepo
 @inject ISolarCalculator Solar
+@inject IBrowserViewportService ViewportService
 
 <PageTitle>Scheduler</PageTitle>
 
@@ -82,7 +86,8 @@ else
     };
 
     private SchedulingData? _data;
-    private DateOnly _weekStart;              // Monday
+    private int _dayCount = 7;                // 7 desktop, 3 phone; default 7 for prerender
+    private DateOnly _windowStart;            // first visible day (Monday in 7-day mode)
     private List<DayColumn> _week = new();
     private int _totalOccurrences;
 
@@ -92,7 +97,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
-        _weekStart = MondayOf(today);
+        _windowStart = MondayOf(today);
         _data = await SchedulingRepo.LoadAllAsync();
 
         _zoneNames = _data.Zones.ToDictionary(z => z.Id, ZoneLabel);
@@ -104,16 +109,70 @@ else
         BuildWeek();
     }
 
-    private void PrevWeek() { _weekStart = _weekStart.AddDays(-7); BuildWeek(); }
-    private void NextWeek() { _weekStart = _weekStart.AddDays(7); BuildWeek(); }
-    private void ThisWeek() { _weekStart = MondayOf(DateOnly.FromDateTime(DateTime.Today)); BuildWeek(); }
+    private void PrevWeek() { _windowStart = _windowStart.AddDays(-_dayCount); BuildWeek(); }
+    private void NextWeek() { _windowStart = _windowStart.AddDays(_dayCount); BuildWeek(); }
+    private void ThisWeek() { _windowStart = AnchorForToday(); BuildWeek(); }
+
+    // 7-day: Monday of today's week. 3-day: today as the leftmost column.
+    private DateOnly AnchorForToday()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        return _dayCount == 7 ? MondayOf(today) : today;
+    }
 
     private string WeekRangeLabel =>
-        $"{_weekStart:MMM d} – {_weekStart.AddDays(6):MMM d, yyyy}";
+        $"{_windowStart:MMM d} – {_windowStart.AddDays(_dayCount - 1):MMM d, yyyy}";
+
+    // --- Responsive day count: 7 on desktop, 3 on phone/small-tablet widths (< Md / 960px) ---
+
+    public Guid Id { get; } = Guid.NewGuid();
+
+    ResizeOptions IBrowserViewportObserver.ResizeOptions => new()
+    {
+        ReportRate = 250,
+        NotifyOnBreakpointOnly = true,
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await ViewportService.SubscribeAsync(this, fireImmediately: true);
+    }
+
+    async Task IBrowserViewportObserver.NotifyBrowserViewportChangeAsync(BrowserViewportEventArgs args)
+    {
+        bool narrow = args.Breakpoint <= Breakpoint.Sm;   // < 960px -> 3 days
+        await ApplyBreakpointAsync(narrow);
+    }
+
+    private async Task ApplyBreakpointAsync(bool narrow)
+    {
+        int newCount = narrow ? 3 : 7;
+        if (newCount == _dayCount) return;                // no-op if bucket unchanged
+        int oldCount = _dayCount;
+        _dayCount = newCount;
+        ReanchorForMode(oldCount);
+        BuildWeek();
+        await InvokeAsync(StateHasChanged);               // callback runs off the render thread
+    }
+
+    // Keep the day the user was looking at; re-anchor predictably on mode switch.
+    private void ReanchorForMode(int oldCount)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var windowEnd = _windowStart.AddDays(oldCount - 1);
+        if (_windowStart <= today && today <= windowEnd)
+            _windowStart = AnchorForToday();              // today was visible -> recenter on today
+        else if (_dayCount == 7)
+            _windowStart = MondayOf(_windowStart);        // keep the 7-day Monday invariant
+        // else (3-day, today not visible): keep _windowStart as-is
+    }
+
+    public async ValueTask DisposeAsync() => await ViewportService.UnsubscribeAsync(this);
 
     private void BuildWeek()
     {
-        _week = new List<DayColumn>(7);
+        _week = new List<DayColumn>(_dayCount);
         _totalOccurrences = 0;
         if (_data is null) return;
 
@@ -121,14 +180,14 @@ else
         var enabled = _data.Programs.Where(p => p.Enabled).ToList();
         int delaySec = _data.Settings.StationDelaySeconds;
 
-        var columns = new List<EventBlock>[7];
-        for (int c = 0; c < 7; c++) columns[c] = new List<EventBlock>();
+        var columns = new List<EventBlock>[_dayCount];
+        for (int c = 0; c < _dayCount; c++) columns[c] = new List<EventBlock>();
 
-        // Scan occurrence dates from the day BEFORE the week through its last day: a run starting
-        // late on the prior Sunday can spill into Monday, and any run can spill into the next day.
-        for (int i = -1; i < 7; i++)
+        // Scan occurrence dates from the day BEFORE the window through its last day: a run starting
+        // late on the prior day can spill into the first column, and any run can spill into the next day.
+        for (int i = -1; i < _dayCount; i++)
         {
-            var date = _weekStart.AddDays(i);
+            var date = _windowStart.AddDays(i);
             var civil = new CivilInstant(date.ToDateTime(TimeOnly.MinValue));
             var (sunrise, sunset) = Solar.ForDate(_data.Settings, date);
 
@@ -157,7 +216,7 @@ else
                         foreach (var seg in ScheduleLayout.SplitAcrossDays(zoneStartSec, zoneEndSec))
                         {
                             int col = i + seg.DayOffset;
-                            if (col < 0 || col > 6) continue; // outside the visible week
+                            if (col < 0 || col > _dayCount - 1) continue; // outside the visible window
 
                             int segDurSec = seg.WithinEndSec - seg.WithinStartSec;
                             columns[col].Add(new EventBlock
@@ -177,9 +236,9 @@ else
             }
         }
 
-        for (int i = 0; i < 7; i++)
+        for (int i = 0; i < _dayCount; i++)
         {
-            var date = _weekStart.AddDays(i);
+            var date = _windowStart.AddDays(i);
             PackLanes(columns[i]);
             _totalOccurrences += columns[i].Count;
             _week.Add(new DayColumn { Date = date, IsToday = date == today, Events = columns[i] });
