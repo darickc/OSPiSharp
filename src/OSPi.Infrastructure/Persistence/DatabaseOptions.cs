@@ -26,7 +26,7 @@ public sealed class DatabaseOptions
         var configured = string.IsNullOrWhiteSpace(Path) ? "ospi.db" : Path;
         var resolved = System.IO.Path.IsPathRooted(configured)
             ? configured
-            : System.IO.Path.Combine(dataRoot, configured);
+            : System.IO.Path.GetFullPath(System.IO.Path.Combine(dataRoot, configured));
 
         var directory = System.IO.Path.GetDirectoryName(resolved);
         if (!string.IsNullOrEmpty(directory))

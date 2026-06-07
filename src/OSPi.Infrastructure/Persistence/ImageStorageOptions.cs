@@ -23,7 +23,7 @@ public sealed class ImageStorageOptions
         var configured = string.IsNullOrWhiteSpace(Path) ? "property-map" : Path;
         var resolved = System.IO.Path.IsPathRooted(configured)
             ? configured
-            : System.IO.Path.Combine(dataRoot, configured);
+            : System.IO.Path.GetFullPath(System.IO.Path.Combine(dataRoot, configured));
 
         Directory.CreateDirectory(resolved);
         return resolved;
